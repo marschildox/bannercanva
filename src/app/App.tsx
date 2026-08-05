@@ -17,6 +17,7 @@ import { ZoomControls } from './components/ZoomControls';
 import { useBannerManager } from './hooks/useBannerManager';
 import { useCustomFormats } from './hooks/useCustomFormats';
 import { useAutoThumbnails } from './hooks/useAutoThumbnails';
+import { useAutoTextContrast } from './hooks/useAutoTextContrast';
 import { Button } from './components/ui/button';
 import { ChevronRight, ArrowRight, PanelLeft, Sparkles } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
@@ -39,6 +40,7 @@ export default function App() {
     bannerThumbnails,
     applySmartPositioningSingle,
     applySmartPositioningAll,
+    patchTextStyles,
   } = useBannerManager(DEFAULT_CONTENT);
 
   const { customFormats, addCustomFormat, deleteCustomFormat, getCustomFormatsByCategory } =
@@ -145,6 +147,9 @@ export default function App() {
     updateBannerThumbnail,
     1500, // 1.5 second debounce - only regenerate after user stops typing
   );
+
+  // Auto-adapt text color/weight/size to the background under each text
+  useAutoTextContrast(allBannersList, bannerContents, patchTextStyles);
 
   // Center on Super Master (250x250) on initial load
   useEffect(() => {
@@ -404,7 +409,7 @@ export default function App() {
           className={`absolute left-0 top-0 bottom-0 z-20 transition-transform duration-300 ${
             sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'
           }`}
-          style={{ width: '320px' }}
+          style={{ width: '360px' }}
         >
           <LeftSidebar
             onAddBannerSize={handleAddBannerSize}
@@ -463,7 +468,7 @@ export default function App() {
         <div
           className={`absolute bottom-4 z-30 pointer-events-auto transition-all duration-300 ${
             selectedFormat ? 'right-[340px]' : 'right-4'
-          } ${!sidebarCollapsed ? 'left-[340px]' : 'left-4'}`}
+          } ${!sidebarCollapsed ? 'left-[380px]' : 'left-4'}`}
         >
           <div className="flex justify-end">
             <ZoomControls

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Search, Plus, Check, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { Input } from '../ui/input';
-import { ScrollArea } from '../ui/scroll-area';
 import { Button } from '../ui/button';
 import {
   SQUARE_FORMATS,
@@ -142,7 +141,7 @@ export function SizesPanel({
       </div>
 
       {/* Scrollable Content */}
-      <ScrollArea className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="p-4">
           {/* Create Custom Size */}
           <button
@@ -287,7 +286,7 @@ export function SizesPanel({
             );
           })}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Custom Size Dialog */}
       <Dialog open={showCustomDialog} onOpenChange={setShowCustomDialog}>

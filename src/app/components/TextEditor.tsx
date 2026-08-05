@@ -17,6 +17,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Switch } from './ui/switch';
 
 interface TextEditorProps {
   text: TextElement;
@@ -259,23 +260,44 @@ export function TextEditor({
 
             {/* Text Color — only color, no background */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold text-gray-700">Text Color</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-gray-700">Text Color</Label>
+                <label
+                  className="flex items-center gap-1.5 cursor-pointer"
+                  title="Automatically adapt color, weight and size for contrast against the background"
+                >
+                  <span className="text-[10px] font-semibold uppercase text-gray-500">
+                    Auto contrast
+                  </span>
+                  <Switch
+                    checked={text.autoContrast !== false}
+                    onCheckedChange={(checked) => updateField('autoContrast', checked)}
+                    className="scale-75"
+                  />
+                </label>
+              </div>
               <div className="flex gap-1.5">
                 <Input
                   type="color"
                   value={text.color}
-                  onChange={(e) => updateField('color', e.target.value)}
+                  onChange={(e) =>
+                    onTextChange(index, { ...text, color: e.target.value, autoContrast: false })
+                  }
                   className="h-8 w-10 p-0.5 cursor-pointer"
                 />
                 <Input
                   type="text"
                   value={text.color}
-                  onChange={(e) => updateField('color', e.target.value)}
+                  onChange={(e) =>
+                    onTextChange(index, { ...text, color: e.target.value, autoContrast: false })
+                  }
                   className="h-8 flex-1 text-xs font-mono"
                 />
               </div>
               <p className="text-xs text-gray-400 italic">
-                Tip: use a Shape element behind text for colored backgrounds
+                {text.autoContrast !== false
+                  ? 'Color adapts to the background automatically. Picking a color turns Auto off.'
+                  : 'Tip: use a Shape element behind text for colored backgrounds'}
               </p>
             </div>
           </div>

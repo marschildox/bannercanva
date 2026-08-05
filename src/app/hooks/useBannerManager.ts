@@ -3,6 +3,7 @@ import {
   BannerColumn,
   BannerContent,
   BannerFormat,
+  TextElement,
   SQUARE_FORMATS,
   HORIZONTAL_FORMATS,
   VERTICAL_FORMATS,
@@ -218,6 +219,36 @@ export function useBannerManager(initialContent: BannerContent) {
     [columns],
   );
 
+  // Patch per-text style fields WITHOUT master→child propagation.
+  // Used by the auto-contrast engine: each banner gets its own adjustments
+  // (same design can need different text colors on different crops).
+  const patchTextStyles = useCallback(
+    (formatId: string, updates: Map<string, Partial<TextElement>>) => {
+      setBannerContents((prev) => {
+        const content = prev.get(formatId);
+        if (!content) return prev;
+
+        let changed = false;
+        const texts = content.texts.map((text) => {
+          const patch = updates.get(text.id);
+          if (!patch) return text;
+          const differs = Object.entries(patch).some(
+            ([key, value]) => text[key as keyof typeof text] !== value,
+          );
+          if (!differs) return text;
+          changed = true;
+          return { ...text, ...patch };
+        });
+
+        if (!changed) return prev;
+        const newContents = new Map(prev);
+        newContents.set(formatId, { ...content, texts });
+        return newContents;
+      });
+    },
+    [],
+  );
+
   // Get all banners for export
   const getAllBanners = useCallback(() => {
     const allBanners: Array<{ id: string; format: BannerFormat }> = [];
@@ -337,5 +368,6 @@ export function useBannerManager(initialContent: BannerContent) {
     bannerThumbnails,
     applySmartPositioningSingle,
     applySmartPositioningAll,
+    patchTextStyles,
   };
 }

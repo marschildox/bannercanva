@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { BannerFormat, BannerContent, SelectedElement } from '../../types/banner';
 import { useState } from 'react';
-import { ScrollArea } from '../ui/scroll-area';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import {
@@ -169,7 +168,7 @@ export function InsertPanel({
         </p>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="p-4 space-y-6">
           {isDisabled ? (
             <div className="flex items-center justify-center h-64 text-center">
@@ -397,7 +396,7 @@ export function InsertPanel({
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

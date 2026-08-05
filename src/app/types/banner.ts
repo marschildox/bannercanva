@@ -129,6 +129,13 @@ export interface TextElement {
 
   // Advanced
   listStyle?: 'none' | 'bullet' | 'numbered';
+
+  /**
+   * Auto contrast: when not explicitly false, the engine samples the
+   * background under this text and adapts color/weight/size for readability.
+   * Set to false automatically when the user picks a manual color.
+   */
+  autoContrast?: boolean;
   baseline?: 'normal' | 'superscript' | 'subscript';
 }
 

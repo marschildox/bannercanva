@@ -483,8 +483,39 @@ export async function captureElement(
   await new Promise((r) => setTimeout(r, forThumbnail ? 30 : 150));
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 4. Capture with html2canvas
+  // 4. Capture — primary engine: html-to-image (SVG foreignObject).
+  //    The browser itself rasterizes the clone, so text metrics, font
+  //    weights and layout match the on-screen render exactly. html2canvas
+  //    (which re-implements layout and drifts on text baselines) is kept
+  //    only as a fallback.
   // ═══════════════════════════════════════════════════════════════════════
+  const finishFromCanvas = (canvas: HTMLCanvasElement): Promise<Blob | string | null> => {
+    if (returnType === 'dataUrl') {
+      return Promise.resolve(canvas.toDataURL(`image/${format}`, quality));
+    }
+    return new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), `image/${format}`, quality);
+    });
+  };
+
+  try {
+    const { toCanvas } = await import('html-to-image');
+    const canvas = await toCanvas(clone, {
+      width,
+      height,
+      pixelRatio: scale,
+      backgroundColor: '#ffffff',
+      cacheBust: false,
+      // Embeds the Google-Fonts @font-face rules as data URLs so the
+      // rasterized SVG uses the exact same fonts as the live canvas.
+      skipFonts: false,
+    });
+    if (wrapper.parentNode) document.body.removeChild(wrapper);
+    return await finishFromCanvas(canvas);
+  } catch (error) {
+    console.warn('[capture] html-to-image failed, falling back to html2canvas:', error);
+  }
+
   try {
     const html2canvas = (await import('html2canvas')).default;
 
@@ -504,17 +535,8 @@ export async function captureElement(
       },
     });
 
-    // Cleanup
     if (wrapper.parentNode) document.body.removeChild(wrapper);
-
-    if (returnType === 'dataUrl') {
-      return canvas.toDataURL(`image/${format}`, quality);
-    }
-
-    // Return blob
-    return new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), `image/${format}`, quality);
-    });
+    return await finishFromCanvas(canvas);
   } catch (error) {
     if (wrapper.parentNode) document.body.removeChild(wrapper);
     console.error('[capture] html2canvas error:', error);
