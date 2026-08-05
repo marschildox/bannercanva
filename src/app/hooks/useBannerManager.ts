@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   BannerColumn,
   BannerContent,
@@ -9,25 +9,52 @@ import {
   VERTICAL_FORMATS,
 } from '../types/banner';
 import { computeSmartLayout, computeSmartLayoutFromReference } from '../utils/smart-positioning';
+import { loadProjectFromLocalStorage, saveProjectToLocalStorage } from '../utils/project-storage';
 
-export function useBannerManager(initialContent: BannerContent) {
-  const [columns, setColumns] = useState<BannerColumn[]>([
+function defaultColumns(): BannerColumn[] {
+  return [
     {
       id: 'col-1',
       category: 'square',
       masterFormat: SQUARE_FORMATS[3], // Use 250x250 as base format
       childFormats: [], // Start with empty children - user will add them progressively
     },
-  ]);
+  ];
+}
+
+export function useBannerManager(initialContent: BannerContent) {
+  // Restore the last session's autosaved project (lazy — reads storage once)
+  const [restored] = useState(() => loadProjectFromLocalStorage());
+
+  const [columns, setColumns] = useState<BannerColumn[]>(
+    () => restored?.columns ?? defaultColumns(),
+  );
 
   const [bannerContents, setBannerContents] = useState<Map<string, BannerContent>>(
-    new Map([[SQUARE_FORMATS[3].id, initialContent]]), // Initialize with 250x250
+    () => restored?.contents ?? new Map([[SQUARE_FORMATS[3].id, initialContent]]),
   );
 
   const [selectedFormat, setSelectedFormat] = useState<BannerFormat | null>(null);
 
   // Thumbnails for all banners (pre-rendered)
   const [bannerThumbnails, setBannerThumbnails] = useState<Map<string, string>>(new Map());
+
+  // Autosave (debounced) — the whole board survives reloads
+  useEffect(() => {
+    const timer = setTimeout(() => saveProjectToLocalStorage(columns, bannerContents), 800);
+    return () => clearTimeout(timer);
+  }, [columns, bannerContents]);
+
+  // Replace the whole project (JSON import, or reset to a fresh board)
+  const replaceProject = useCallback(
+    (newColumns: BannerColumn[] | null, newContents: Map<string, BannerContent> | null) => {
+      setColumns(newColumns ?? defaultColumns());
+      setBannerContents(newContents ?? new Map([[SQUARE_FORMATS[3].id, { ...initialContent }]]));
+      setSelectedFormat(null);
+      setBannerThumbnails(new Map());
+    },
+    [initialContent],
+  );
 
   // Update thumbnail for a specific banner
   const updateBannerThumbnail = useCallback((formatId: string, dataUrl: string) => {
@@ -369,5 +396,6 @@ export function useBannerManager(initialContent: BannerContent) {
     applySmartPositioningSingle,
     applySmartPositioningAll,
     patchTextStyles,
+    replaceProject,
   };
 }

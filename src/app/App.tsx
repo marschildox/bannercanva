@@ -10,6 +10,7 @@ import {
 import { BannerColumn } from './components/BannerColumn';
 import { BannerEditor } from './components/BannerEditor';
 import { ExportToolbar } from './components/ExportToolbar';
+import { ProjectMenu } from './components/ProjectMenu';
 import { LeftSidebar } from './components/LeftSidebar';
 import { InfinityBoard, InfinityBoardRef } from './components/InfinityBoard';
 import { FixedScale } from './components/FixedScale';
@@ -43,6 +44,7 @@ export default function App() {
     applySmartPositioningSingle,
     applySmartPositioningAll,
     patchTextStyles,
+    replaceProject,
   } = useBannerManager(DEFAULT_CONTENT);
 
   const { customFormats, addCustomFormat, deleteCustomFormat, getCustomFormatsByCategory } =
@@ -332,6 +334,15 @@ export default function App() {
               </span>
             </div>
             <div className="flex items-center gap-4">
+              {/* Project: export / import / new */}
+              <ProjectMenu
+                columns={columns}
+                bannerContents={bannerContents}
+                onReplaceProject={replaceProject}
+                onNotify={(message, kind) =>
+                  kind === 'success' ? toast.success(message) : toast.error(message)
+                }
+              />
               {/* Smart Positioning */}
               <Button
                 variant="outline"

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { useBannerManager } from './useBannerManager';
@@ -18,6 +18,10 @@ function setup() {
 }
 
 describe('useBannerManager', () => {
+  // The hook autosaves to localStorage and restores on mount — without this,
+  // one test's autosaved board would be restored by the next test.
+  beforeEach(() => localStorage.clear());
+
   it('starts with one square column whose master is the super master', () => {
     const { result } = setup();
     expect(result.current.columns).toHaveLength(1);
