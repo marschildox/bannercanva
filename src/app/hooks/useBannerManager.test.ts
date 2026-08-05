@@ -186,3 +186,53 @@ describe('useBannerManager', () => {
     ]);
   });
 });
+
+describe('startCampaign', () => {
+  beforeEach(() => localStorage.clear());
+
+  const campaignContent: BannerContent = {
+    ...DEFAULT_CONTENT,
+    texts: [{ ...DEFAULT_CONTENT.texts[0], id: 'camp-text', text: 'Work standing' }],
+    ctas: [{ id: 'camp-cta', text: 'Try free' }],
+  };
+
+  it('builds a square-only board when no extra columns are requested', () => {
+    const { result } = setup();
+    act(() => result.current.startCampaign(campaignContent, {}));
+
+    expect(result.current.columns).toHaveLength(1);
+    expect(result.current.bannerContents.size).toBe(1);
+    expect(result.current.bannerContents.get(SUPER_MASTER_ID)!.texts[0].text).toBe('Work standing');
+  });
+
+  it('seeds horizontal and vertical columns adapted to their own formats', () => {
+    const { result } = setup();
+    act(() => result.current.startCampaign(campaignContent, { horizontal: true, vertical: true }));
+
+    expect(result.current.columns.map((c) => c.category)).toEqual([
+      'square',
+      'horizontal',
+      'vertical',
+    ]);
+    expect(result.current.bannerContents.size).toBe(3);
+
+    // Each column master carries the campaign copy, laid out for its format
+    for (const column of result.current.columns) {
+      const content = result.current.bannerContents.get(column.masterFormat.id)!;
+      expect(content.texts[0].text).toBe('Work standing');
+      expect(content.ctas[0].text).toBe('Try free');
+      // Layout ran: zone positions became explicit coordinates
+      expect(typeof content.texts[0].x).toBe('number');
+    }
+  });
+
+  it('replaces any previous board instead of merging into it', () => {
+    const { result } = setup();
+    act(() => result.current.addChildBanner(0, SQUARE_FORMATS[0]));
+    expect(result.current.columns[0].childFormats).toHaveLength(1);
+
+    act(() => result.current.startCampaign(campaignContent, {}));
+    expect(result.current.columns[0].childFormats).toHaveLength(0);
+    expect(result.current.bannerContents.has(SQUARE_FORMATS[0].id)).toBe(false);
+  });
+});

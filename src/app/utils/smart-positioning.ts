@@ -51,6 +51,28 @@ function estimateTextWidth(text: string, fontSize: number, fontWeight?: string):
 /**
  * Estimate rendered height of a text line including line-height.
  */
+/**
+ * Estimate how tall a text block renders once wrapping is taken into account.
+ *
+ * Reserving one line's worth of height is what made a wrapped headline collide
+ * with the text stacked below it — long copy in a narrow format (a Story, a
+ * skyscraper) wraps to two or three lines.
+ */
+function estimateBlockHeight(
+  text: string,
+  fontSize: number,
+  lineHeight: number,
+  paddingY: number,
+  availableWidth: number,
+  fontWeight?: string,
+): number {
+  const lines =
+    availableWidth > 0
+      ? Math.max(1, Math.ceil(estimateTextWidth(text, fontSize, fontWeight) / availableWidth))
+      : 1;
+  return lines * estimateTextHeight(fontSize, lineHeight) + paddingY * 2;
+}
+
 function estimateTextHeight(fontSize: number, lineHeight: number = 1.2): number {
   return Math.ceil(fontSize * lineHeight);
 }
@@ -227,7 +249,15 @@ function positionTexts(
         const fontSize = Math.round(baseFontSize * (t.fontSize / 100));
         const lineH = (t.lineHeight || 120) / 100;
         const paddingY = t.paddingY || 8;
-        const h = estimateTextHeight(fontSize, lineH) + paddingY * 2;
+        const paddingX = t.paddingX || 16;
+        const h = estimateBlockHeight(
+          t.text,
+          fontSize,
+          lineH,
+          paddingY,
+          textZoneWidth - paddingX * 2,
+          t.fontWeight,
+        );
         textHeights.push(h);
         totalTextH += h;
       });
@@ -268,7 +298,15 @@ function positionTexts(
         const fontSize = Math.round(baseFontSize * (t.fontSize / 100));
         const lineH = (t.lineHeight || 120) / 100;
         const paddingY = t.paddingY || 8;
-        const h = estimateTextHeight(fontSize, lineH) + paddingY * 2;
+        const paddingX = t.paddingX || 16;
+        const h = estimateBlockHeight(
+          t.text,
+          fontSize,
+          lineH,
+          paddingY,
+          W - paddingX * 2,
+          t.fontWeight,
+        );
         textHeights.push(h);
         totalTextH += h;
       });
@@ -307,7 +345,15 @@ function positionTexts(
         const fontSize = Math.round(baseFontSize * (t.fontSize / 100));
         const lineH = (t.lineHeight || 120) / 100;
         const paddingY = t.paddingY || 8;
-        const h = estimateTextHeight(fontSize, lineH) + paddingY * 2;
+        const paddingX = t.paddingX || 16;
+        const h = estimateBlockHeight(
+          t.text,
+          fontSize,
+          lineH,
+          paddingY,
+          W - paddingX * 2,
+          t.fontWeight,
+        );
         textHeights.push(h);
         totalTextH += h;
       });

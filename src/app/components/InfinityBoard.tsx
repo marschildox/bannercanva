@@ -113,58 +113,124 @@ export const InfinityBoard = forwardRef<InfinityBoardRef, InfinityBoardProps>(
       setPan((prev) => ({ x: prev.x + offsetX, y: prev.y + offsetY }));
     }, []);
 
-    const fitOnce = useCallback((insets: ViewportInsets = {}) => {
+    /**
+     * Frame the whole board inside the usable viewport.
+     *
+     * The board's on-screen size is not proportional to the zoom, so a single
+     * division can't solve it. Measured behaviour: a banner's screen size grows
+     * with the *square* of the zoom (the board scales the banner, and the
+     * banner scales its own canvas), the world-space gaps between banners grow
+     * linearly, and the counter-scaled chrome (column headers, banner labels,
+     * add-format buttons) stays a constant number of pixels.
+     *
+     * So this converges instead of guessing: each pass measures the real box
+     * and steps the zoom by sqrt(needed / measured) — the inverse of the
+     * dominant quadratic term, which lands within a few percent on the first
+     * pass — then stops as soon as the board fits, and finishes with a pure
+     * pan to centre it. Bounded so no layout can make it spin.
+     */
+    const zoomToFit = useCallback((insets: ViewportInsets = {}) => {
       const container = containerRef.current;
       const content = contentRef.current;
       if (!container || !content) return;
 
-      const cRect = container.getBoundingClientRect();
-      const rect = content.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
+      const MARGIN = 24;
+      const MAX_PASSES = 9; // bisection over [minZoom, maxZoom] — ~0.008 resolution
+      let passes = 0;
 
-      // Usable viewport excluding floating side panels
-      const insetLeft = insets.left ?? 0;
-      const insetRight = insets.right ?? 0;
-      const insetTop = insets.top ?? 0;
-      const insetBottom = insets.bottom ?? 0;
-      const viewW = cRect.width - insetLeft - insetRight;
-      const viewH = cRect.height - insetTop - insetBottom;
-
-      const currentZoom = zoomRef.current;
-      const worldW = rect.width / currentZoom;
-      const worldH = rect.height / currentZoom;
-      const margin = 64;
-
-      const newZoom = clamp(
-        Math.min((viewW - margin) / worldW, (viewH - margin) / worldH),
-        minZoomRef.current,
-        maxZoomRef.current,
-      );
-
-      // World-space origin of the content box
-      const worldX = (rect.left - cRect.left - panRef.current.x) / currentZoom;
-      const worldY = (rect.top - cRect.top - panRef.current.y) / currentZoom;
-
-      const newPan = {
-        x: insetLeft + (viewW - worldW * newZoom) / 2 - worldX * newZoom,
-        y: insetTop + (viewH - worldH * newZoom) / 2 - worldY * newZoom,
+      const usableArea = () => {
+        const c = container.getBoundingClientRect();
+        const left = c.left + (insets.left ?? 0) + MARGIN;
+        const top = c.top + (insets.top ?? 0) + MARGIN;
+        return {
+          left,
+          top,
+          width: Math.max(80, c.width - (insets.left ?? 0) - (insets.right ?? 0) - MARGIN * 2),
+          height: Math.max(80, c.height - (insets.top ?? 0) - (insets.bottom ?? 0) - MARGIN * 2),
+        };
       };
-      panRef.current = newPan;
-      zoomRef.current = newZoom;
-      setPan(newPan);
-      onZoomChangeRef.current?.(newZoom);
-    }, []);
 
-    const zoomToFit = useCallback(
-      (insets: ViewportInsets = {}) => {
-        // Two passes: fixed-scale UI elements (headers, buttons) resize in
-        // world space after a zoom change, shifting the content bounds — the
-        // second pass runs after that re-layout and converges the fit.
-        fitOnce(insets);
-        requestAnimationFrame(() => requestAnimationFrame(() => fitOnce(insets)));
-      },
-      [fitOnce],
-    );
+      const centreContent = () => {
+        const area = usableArea();
+        const rect = content.getBoundingClientRect();
+        const next = {
+          x: panRef.current.x + (area.left + area.width / 2 - (rect.left + rect.width / 2)),
+          y: panRef.current.y + (area.top + area.height / 2 - (rect.top + rect.height / 2)),
+        };
+        panRef.current = next;
+        setPan(next);
+      };
+
+      // Bisect on the zoom. "Does the board fit?" is monotonic in zoom, which
+      // is all bisection needs — no model of the growth curve — and the last
+      // zoom known to fit is what gets applied, so it never ends overflowing.
+      let low = minZoomRef.current;
+      let high = maxZoomRef.current;
+      let bestFitting: number | null = null;
+
+      const applyZoom = (zoom: number) => {
+        zoomRef.current = zoom;
+        onZoomChangeRef.current?.(zoom);
+      };
+
+      /**
+       * Run `next` once the content box has stopped changing.
+       *
+       * A trial zoom only takes effect after React commits it and the browser
+       * re-lays-out the counter-scaled chrome, and under load that can take
+       * more than a frame or two. Measuring on a fixed rAF delay reads the
+       * *previous* layout and makes the search converge on a wrong answer, so
+       * wait for two consecutive identical measurements instead of guessing.
+       */
+      const whenSettled = (next: () => void) => {
+        let previous = '';
+        let frames = 0;
+        const tick = () => {
+          const rect = content.getBoundingClientRect();
+          const signature = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+          if (signature === previous || frames > 20) {
+            next();
+            return;
+          }
+          previous = signature;
+          frames += 1;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      };
+
+      const step = () => {
+        const area = usableArea();
+        const rect = content.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+
+        const ratio = Math.min(area.width / rect.width, area.height / rect.height);
+        if (ratio >= 1) {
+          bestFitting = zoomRef.current;
+          low = zoomRef.current;
+        } else {
+          high = zoomRef.current;
+        }
+
+        passes += 1;
+        const snug = ratio >= 1 && ratio <= 1.04;
+        if (snug || passes >= MAX_PASSES || high - low < 0.01) {
+          const settled = bestFitting ?? minZoomRef.current;
+          if (Math.abs(settled - zoomRef.current) > 0.001) {
+            applyZoom(settled);
+            whenSettled(centreContent);
+          } else {
+            centreContent();
+          }
+          return;
+        }
+
+        applyZoom((low + high) / 2);
+        whenSettled(step);
+      };
+
+      whenSettled(step);
+    }, []);
 
     useImperativeHandle(ref, () => ({
       panTo,

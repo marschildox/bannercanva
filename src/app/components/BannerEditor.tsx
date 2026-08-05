@@ -28,12 +28,19 @@ interface BannerEditorProps {
   multiSelectedIds?: string[];
   onGroupElements?: () => void;
   onUngroupElements?: (groupId: string) => void;
+  // AI features
+  geminiApiKey?: string;
+  onOpenAiSettings?: () => void;
+  onNotify?: (message: string, kind: 'success' | 'error') => void;
 }
 
 export function BannerEditor({
   selectedFormat,
   isMaster,
   isSuperMaster,
+  geminiApiKey,
+  onOpenAiSettings,
+  onNotify,
   content,
   onContentChange,
   onClose,
@@ -280,7 +287,14 @@ export function BannerEditor({
               <p className="text-xs text-blue-600 mt-1">Edit the background image and position</p>
             </div>
 
-            <BackgroundEditor content={content} onContentChange={onContentChange} />
+            <BackgroundEditor
+              content={content}
+              onContentChange={onContentChange}
+              selectedFormat={selectedFormat}
+              geminiApiKey={geminiApiKey}
+              onOpenAiSettings={onOpenAiSettings}
+              onNotify={onNotify}
+            />
 
             <Button
               size="sm"

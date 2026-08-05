@@ -56,6 +56,54 @@ export function useBannerManager(initialContent: BannerContent) {
     [initialContent],
   );
 
+  /**
+   * Build a fresh board from a campaign brief (the wizard's output): the Super
+   * Master plus optional horizontal/vertical columns, all seeded from the same
+   * design. Each master runs the full zone-based layout for its own format
+   * rather than reference scaling — the brief carries no manual positioning to
+   * preserve, so every format deserves its own composition. Applied as one
+   * atomic swap so no propagation runs against a half-updated board.
+   */
+  const startCampaign = useCallback(
+    (content: BannerContent, options: { horizontal?: boolean; vertical?: boolean } = {}) => {
+      const masters: Array<{
+        id: string;
+        category: BannerColumn['category'];
+        format: BannerFormat;
+      }> = [{ id: 'col-1', category: 'square', format: SQUARE_FORMATS[3] }];
+
+      // Recognizable social masters, looked up by id so a catalog reorder
+      // can't silently change what a new campaign starts with.
+      const horizontalMaster =
+        HORIZONTAL_FORMATS.find((f) => f.id === 'hz-1200x628') ?? HORIZONTAL_FORMATS[0];
+      const verticalMaster =
+        VERTICAL_FORMATS.find((f) => f.id === 'vt-1080x1920') ?? VERTICAL_FORMATS[0];
+
+      if (options.horizontal) {
+        masters.push({ id: 'col-horizontal', category: 'horizontal', format: horizontalMaster });
+      }
+      if (options.vertical) {
+        masters.push({ id: 'col-vertical', category: 'vertical', format: verticalMaster });
+      }
+
+      const newColumns: BannerColumn[] = masters.map((m) => ({
+        id: m.id,
+        category: m.category,
+        masterFormat: m.format,
+        childFormats: [],
+      }));
+      const contents = new Map<string, BannerContent>(
+        masters.map((m) => [m.format.id, computeSmartLayout({ ...content }, m.format)]),
+      );
+
+      setColumns(newColumns);
+      setBannerContents(contents);
+      setSelectedFormat(null);
+      setBannerThumbnails(new Map());
+    },
+    [],
+  );
+
   // Update thumbnail for a specific banner
   const updateBannerThumbnail = useCallback((formatId: string, dataUrl: string) => {
     setBannerThumbnails((prev) => {
@@ -69,8 +117,8 @@ export function useBannerManager(initialContent: BannerContent) {
   // be provided (e.g. when the user picks a specific size from the Sizes panel).
   const addColumn = useCallback((category: 'horizontal' | 'vertical', master?: BannerFormat) => {
     const formats = category === 'horizontal' ? HORIZONTAL_FORMATS : VERTICAL_FORMATS;
-    // For horizontal, use Facebook Sponsored Message (index 16) instead of the first format
-    // For vertical, use the first format
+    // Defaults when the caller doesn't name a size: Large Rectangle (336x280)
+    // for horizontal, Skyscraper (120x600) for vertical — index 16 and 0.
     const masterFormatIndex = category === 'horizontal' ? 16 : 0;
     const masterFormat = master ?? formats[masterFormatIndex];
 
@@ -397,5 +445,6 @@ export function useBannerManager(initialContent: BannerContent) {
     applySmartPositioningAll,
     patchTextStyles,
     replaceProject,
+    startCampaign,
   };
 }

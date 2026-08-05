@@ -1,16 +1,35 @@
-import { BannerContent } from '../../types/banner';
+import { useState } from 'react';
+import { BannerContent, BannerFormat } from '../../types/banner';
 import { Label } from '../ui/label';
 import { Button } from '../ui/button';
-import { Upload } from 'lucide-react';
+import { Input } from '../ui/input';
+import { Upload, Sparkles, Loader2, KeyRound } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { generateBackgroundImage, aspectRatioLabel } from '../../services/ai/image';
+import { AiError } from '../../services/ai/types';
 
 interface BackgroundEditorProps {
   content: BannerContent;
   onContentChange: (content: BannerContent) => void;
+  /** Used to steer the generated image's composition */
+  selectedFormat?: BannerFormat | null;
+  geminiApiKey?: string;
+  onOpenAiSettings?: () => void;
+  onNotify?: (message: string, kind: 'success' | 'error') => void;
 }
 
-export function BackgroundEditor({ content, onContentChange }: BackgroundEditorProps) {
+export function BackgroundEditor({
+  content,
+  onContentChange,
+  selectedFormat,
+  geminiApiKey = '',
+  onOpenAiSettings,
+  onNotify,
+}: BackgroundEditorProps) {
+  const [prompt, setPrompt] = useState('');
+  const [generating, setGenerating] = useState(false);
+
   const handleImageUpload = (file: File) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -18,6 +37,26 @@ export function BackgroundEditor({ content, onContentChange }: BackgroundEditorP
       onContentChange({ ...content, backgroundImage: base64String });
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleGenerate = async () => {
+    if (generating || !prompt.trim()) return;
+    setGenerating(true);
+    try {
+      const ratio = selectedFormat
+        ? aspectRatioLabel(selectedFormat.width, selectedFormat.height)
+        : '1:1';
+      const dataUrl = await generateBackgroundImage({ prompt, aspectRatio: ratio }, geminiApiKey);
+      onContentChange({ ...content, backgroundImage: dataUrl });
+      onNotify?.('Background generated', 'success');
+    } catch (error) {
+      onNotify?.(
+        error instanceof AiError ? error.message : 'Background generation failed.',
+        'error',
+      );
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -34,7 +73,7 @@ export function BackgroundEditor({ content, onContentChange }: BackgroundEditorP
       {/* CONTENT TAB */}
       <TabsContent value="content" className="mt-3">
         <div className="pr-1">
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
               <h3 className="text-xs font-semibold text-gray-700 mb-2">Background Image</h3>
 
@@ -68,6 +107,70 @@ export function BackgroundEditor({ content, onContentChange }: BackgroundEditorP
                 <Upload className="h-3 w-3 mr-2" />
                 {content.backgroundImage ? 'Change Image' : 'Upload Image'}
               </Button>
+            </div>
+
+            {/* ── Generate with AI ── */}
+            <div className="space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-2.5">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-violet-600" />
+                <Label className="text-xs font-semibold text-violet-900">Generate with AI</Label>
+                {selectedFormat && (
+                  <span className="ml-auto text-[10px] font-mono text-violet-500">
+                    {aspectRatioLabel(selectedFormat.width, selectedFormat.height)}
+                  </span>
+                )}
+              </div>
+
+              {geminiApiKey ? (
+                <>
+                  <Input
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleGenerate();
+                    }}
+                    placeholder="Sunlit minimalist office, soft shadows"
+                    className="h-8 text-xs bg-white"
+                    disabled={generating}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full h-8 text-xs bg-violet-600 hover:bg-violet-700"
+                    onClick={() => void handleGenerate()}
+                    disabled={generating || !prompt.trim()}
+                  >
+                    {generating ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                        Generating…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3 mr-2" />
+                        Generate background
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-[10px] text-violet-600/80 leading-snug">
+                    Images are generated without text so headlines stay readable on top.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] text-violet-700 leading-snug">
+                    Add a Google Gemini API key to generate backgrounds from a description.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={onOpenAiSettings}
+                  >
+                    <KeyRound className="h-3 w-3 mr-2" />
+                    Open AI settings
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -11,6 +11,8 @@ import { BannerColumn } from './components/BannerColumn';
 import { BannerEditor } from './components/BannerEditor';
 import { ExportToolbar } from './components/ExportToolbar';
 import { ProjectMenu } from './components/ProjectMenu';
+import { AiSettingsDialog } from './components/AiSettingsDialog';
+import { CampaignWizard } from './components/CampaignWizard';
 import { LeftSidebar } from './components/LeftSidebar';
 import { InfinityBoard, InfinityBoardRef } from './components/InfinityBoard';
 import { FixedScale } from './components/FixedScale';
@@ -20,11 +22,13 @@ import { useCustomFormats } from './hooks/useCustomFormats';
 import { useAutoThumbnails } from './hooks/useAutoThumbnails';
 import { useAutoTextContrast } from './hooks/useAutoTextContrast';
 import { Button } from './components/ui/button';
-import { ChevronRight, ArrowRight, PanelLeft, Sparkles } from 'lucide-react';
+import { ChevronRight, ArrowRight, PanelLeft, Sparkles, Wand2, KeyRound } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { createGroup, dissolveGroup } from './utils/group-helpers';
 import { computeSmartLayout } from './utils/smart-positioning';
 import type { BannerTemplate } from './data/templates';
+import { loadAiSettings } from './services/ai/settings';
+import type { AiSettings } from './services/ai/types';
 
 export default function App() {
   const {
@@ -45,10 +49,21 @@ export default function App() {
     applySmartPositioningAll,
     patchTextStyles,
     replaceProject,
+    startCampaign,
   } = useBannerManager(DEFAULT_CONTENT);
 
   const { customFormats, addCustomFormat, deleteCustomFormat, getCustomFormatsByCategory } =
     useCustomFormats();
+
+  // AI keys/model live in this browser only (see AiSettingsDialog)
+  const [aiSettings, setAiSettings] = useState<AiSettings>(() => loadAiSettings());
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const notify = useCallback(
+    (message: string, kind: 'success' | 'error') =>
+      kind === 'success' ? toast.success(message) : toast.error(message),
+    [],
+  );
 
   const [zoom, setZoom] = useState(0.5);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -323,6 +338,28 @@ export default function App() {
       {/* Toast Notifications */}
       <Toaster position="bottom-right" richColors closeButton />
 
+      {/* AI keys / model */}
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        onOpenChange={setAiSettingsOpen}
+        settings={aiSettings}
+        onSettingsChange={setAiSettings}
+      />
+
+      {/* Guided campaign setup */}
+      <CampaignWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        aiSettings={aiSettings}
+        onOpenAiSettings={() => setAiSettingsOpen(true)}
+        onNotify={notify}
+        onComplete={(content, options) => {
+          startCampaign(content, options);
+          const columnCount = 1 + (options.horizontal ? 1 : 0) + (options.vertical ? 1 : 0);
+          toast.success(`Campaign created with ${columnCount} format columns`);
+        }}
+      />
+
       {/* Top Bar */}
       <div className="bg-white border-b shadow-sm z-30 relative">
         <div className="px-6 py-2">
@@ -339,10 +376,29 @@ export default function App() {
                 columns={columns}
                 bannerContents={bannerContents}
                 onReplaceProject={replaceProject}
-                onNotify={(message, kind) =>
-                  kind === 'success' ? toast.success(message) : toast.error(message)
-                }
+                onNotify={notify}
               />
+              {/* Guided campaign setup */}
+              <Button
+                variant="default"
+                size="sm"
+                className="gap-2"
+                onClick={() => setWizardOpen(true)}
+                title="Start a guided campaign: brief, brand, copy"
+              >
+                <Wand2 className="h-4 w-4" />
+                <span className="hidden sm:inline">New campaign</span>
+              </Button>
+              {/* AI keys */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setAiSettingsOpen(true)}
+                title="AI settings (API keys, model)"
+              >
+                <KeyRound className="h-4 w-4" />
+              </Button>
               {/* Smart Positioning */}
               <Button
                 variant="outline"
@@ -508,6 +564,9 @@ export default function App() {
             multiSelectedIds={multiSelectedIds}
             onGroupElements={handleGroupElements}
             onUngroupElements={handleUngroupElements}
+            geminiApiKey={aiSettings.geminiApiKey}
+            onOpenAiSettings={() => setAiSettingsOpen(true)}
+            onNotify={notify}
           />
         </div>
 
@@ -523,7 +582,7 @@ export default function App() {
               onZoomChange={setZoom}
               onZoomToFit={() =>
                 infinityBoardRef.current?.zoomToFit({
-                  left: sidebarCollapsed ? 0 : 320,
+                  left: sidebarCollapsed ? 0 : 360,
                   right: selectedFormat ? 320 : 0,
                 })
               }
