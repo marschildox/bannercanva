@@ -1,0 +1,430 @@
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { DEFAULT_CONTENT, SelectedElement, ElementGroup } from './types/banner';
+import { BannerColumn } from './components/BannerColumn';
+import { BannerEditor } from './components/BannerEditor';
+import { ExportToolbar } from './components/ExportToolbar';
+import { LeftSidebar } from './components/LeftSidebar';
+import { InfinityBoard, InfinityBoardRef } from './components/InfinityBoard';
+import { FixedScale } from './components/FixedScale';
+import { ZoomControls } from './components/ZoomControls';
+import { useBannerManager } from './hooks/useBannerManager';
+import { useCustomFormats } from './hooks/useCustomFormats';
+import { useAutoThumbnails } from './hooks/useAutoThumbnails';
+import { Button } from './components/ui/button';
+import { ChevronRight, ArrowRight, PanelLeft, Sparkles } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
+import { createGroup, dissolveGroup } from './utils/group-helpers';
+
+export default function App() {
+  const {
+    columns,
+    bannerContents,
+    selectedFormat,
+    setSelectedFormat,
+    addColumn,
+    deleteColumn,
+    addChildBanner,
+    deleteChildBanner,
+    updateBannerContent,
+    getAllBanners,
+    getColumnBanners,
+    updateBannerThumbnail,
+    bannerThumbnails,
+    applySmartPositioningSingle,
+    applySmartPositioningAll,
+  } = useBannerManager(DEFAULT_CONTENT);
+
+  const { customFormats, addCustomFormat, deleteCustomFormat, getCustomFormatsByCategory } =
+    useCustomFormats();
+
+  const [zoom, setZoom] = useState(0.5);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedElement, setSelectedElement] = useState<SelectedElement>(null);
+  const [activeBanner, setActiveBanner] = useState<string | null>(null);
+  const infinityBoardRef = useRef<InfinityBoardRef>(null);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // MULTI-SELECTION & GROUPING
+  // ═══════════════════════════════════════════════════════════════════
+  const [multiSelectedIds, setMultiSelectedIds] = useState<string[]>([]);
+
+  const handleMultiSelect = useCallback((elementId: string) => {
+    setMultiSelectedIds((prev) =>
+      prev.includes(elementId) ? prev.filter((id) => id !== elementId) : [...prev, elementId],
+    );
+    // Clear single selection when multi-selecting
+    setSelectedElement(null);
+  }, []);
+
+  const handleGroupElements = useCallback(() => {
+    if (multiSelectedIds.length < 2 || !selectedFormat) return;
+    const content = bannerContents.get(selectedFormat.id);
+    if (!content) return;
+
+    // Use group-helpers to create a real DOM-container group
+    const result = createGroup(multiSelectedIds, content, selectedFormat);
+    if (!result) return;
+
+    updateBannerContent(selectedFormat.id, result.updatedContent);
+    setMultiSelectedIds([]);
+    setSelectedElement({ type: 'group', id: result.group.id });
+    toast.success(`Grouped ${result.group.memberIds.length} elements`);
+  }, [multiSelectedIds, selectedFormat, bannerContents, updateBannerContent]);
+
+  const handleUngroupElements = useCallback(
+    (groupId: string) => {
+      if (!selectedFormat) return;
+      const content = bannerContents.get(selectedFormat.id);
+      if (!content) return;
+
+      // Use group-helpers to dissolve the group and restore absolute positions
+      const updatedContent = dissolveGroup(groupId, content);
+      updateBannerContent(selectedFormat.id, updatedContent);
+      setSelectedElement(null);
+      toast.success('Group dissolved');
+    },
+    [selectedFormat, bannerContents, updateBannerContent],
+  );
+
+  // Keyboard shortcuts for group/ungroup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+G or Cmd+G → Group
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey) {
+        if (multiSelectedIds.length >= 2) {
+          e.preventDefault();
+          handleGroupElements();
+        }
+      }
+      // Ctrl+Shift+G or Cmd+Shift+G → Ungroup
+      if ((e.ctrlKey || e.metaKey) && e.key === 'G' && e.shiftKey) {
+        if (selectedElement?.type === 'group') {
+          e.preventDefault();
+          handleUngroupElements(selectedElement.id);
+        }
+      }
+      // Escape → clear multi-selection
+      if (e.key === 'Escape' && multiSelectedIds.length > 0) {
+        setMultiSelectedIds([]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [multiSelectedIds, selectedElement, handleGroupElements, handleUngroupElements]);
+
+  // Memoize banner lists to avoid creating new array references on every render.
+  // Without this, getAllBanners() returns a fresh array each render, causing
+  // useAutoThumbnails' useEffect to fire every time → infinite cycle.
+  const allBannersList = useMemo(() => getAllBanners(), [getAllBanners]);
+
+  const columnBannersList = useMemo(
+    () => columns.map((_, index) => getColumnBanners(index)),
+    [columns, getColumnBanners],
+  );
+
+  const columnNames = useMemo(
+    () =>
+      columns.map((col, index) => {
+        if (index === 0) return 'Square';
+        return col.category === 'horizontal' ? 'Horizontal' : 'Vertical';
+      }),
+    [columns],
+  );
+
+  // Auto-generate thumbnails when content changes (debounced)
+  useAutoThumbnails(
+    allBannersList,
+    bannerContents,
+    updateBannerThumbnail,
+    1500, // 1.5 second debounce - only regenerate after user stops typing
+  );
+
+  // Center on Super Master (250x250) on initial load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const superMasterId = columns[0]?.masterFormat.id;
+      if (superMasterId && infinityBoardRef.current) {
+        const superMasterElement = document.querySelector(`[data-banner-id="${superMasterId}"]`);
+        if (superMasterElement) {
+          infinityBoardRef.current.centerOn(superMasterElement as HTMLElement);
+        }
+      }
+    }, 100); // Wait for initial render
+
+    return () => clearTimeout(timer);
+  }, []); // Only run once on mount
+
+  const handleBannerClick = (formatId: string) => {
+    const format = [...columns.flatMap((c) => [c.masterFormat, ...c.childFormats])].find(
+      (f) => f.id === formatId,
+    );
+
+    if (format) {
+      // Two-level activation system:
+      // 1. If banner is not active, just activate it (orange border, show layers)
+      // 2. If banner is already active, select the background element (blue border, editing mode)
+
+      if (activeBanner !== formatId) {
+        // First click: Activate the banner (orange border)
+        setActiveBanner(formatId);
+        setSelectedFormat(format);
+        setSelectedElement(null); // Clear element selection — show layers list
+      } else if (!selectedElement) {
+        // Second click: Banner is active but no element selected → select background (blue border)
+        setSelectedElement({ type: 'background' });
+      }
+      // If already in editing mode (element selected), clicking background again re-selects background
+      // This is handled by BannerCanvas element click handlers directly
+
+      // Center on the selected banner after a brief delay to ensure rendering
+      setTimeout(() => {
+        const bannerElement = document.querySelector(`[data-banner-id="${formatId}"]`);
+        if (bannerElement && infinityBoardRef.current) {
+          infinityBoardRef.current.centerOn(bannerElement as HTMLElement);
+        }
+      }, 50);
+    }
+  };
+
+  // Deactivate banner when clicking on the whiteboard background
+  const handleWhiteboardClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const isInsideBanner = target.closest('[data-banner-id]');
+    const isInteractiveUI = target.closest('button') || target.closest('[role="dialog"]');
+
+    if (!isInsideBanner && !isInteractiveUI) {
+      setActiveBanner(null);
+      setSelectedFormat(null);
+      setSelectedElement(null);
+      setMultiSelectedIds([]);
+    }
+  };
+
+  const handleElementSelect = (element: SelectedElement) => {
+    setSelectedElement(element);
+    // Clear multi-selection when single-selecting
+    if (element !== null) {
+      setMultiSelectedIds([]);
+    }
+  };
+
+  const handleContentChange = (content: any) => {
+    if (selectedFormat) {
+      updateBannerContent(selectedFormat.id, content);
+    }
+  };
+
+  const getContent = (formatId: string) => {
+    return bannerContents.get(formatId) || DEFAULT_CONTENT;
+  };
+
+  const isMaster = (formatId: string) => {
+    return columns.some((col) => col.masterFormat.id === formatId);
+  };
+
+  const isSuperMaster = (formatId: string) => {
+    return formatId === columns[0]?.masterFormat.id;
+  };
+
+  const handleAddChildren = (columnIndex: number, formats: any[]) => {
+    formats.forEach((format) => addChildBanner(columnIndex, format));
+  };
+
+  const handleRemoveChild = (columnIndex: number, formatId: string) => {
+    const column = columns[columnIndex];
+    const childIndex = column.childFormats.findIndex((f) => f.id === formatId);
+    if (childIndex !== -1) {
+      deleteChildBanner(columnIndex, childIndex);
+    }
+  };
+
+  const selectedBanner = selectedFormat ? { id: selectedFormat.id, format: selectedFormat } : null;
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Toast Notifications */}
+      <Toaster position="bottom-right" richColors closeButton />
+
+      {/* Top Bar */}
+      <div className="bg-white border-b shadow-sm z-30 relative">
+        <div className="px-6 py-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg">Banner Generator</h1>
+              <span className="text-xs text-gray-400 hidden sm:inline">
+                Create responsive banners across multiple formats
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              {/* Smart Positioning */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => {
+                  applySmartPositioningAll();
+                  toast.success('Smart Layout applied to all banners');
+                }}
+                title="Reposition all elements in every banner to fit their format optimally"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="hidden sm:inline">Smart Layout All</span>
+              </Button>
+              {/* Export Toolbar */}
+              <ExportToolbar
+                selectedBanner={selectedBanner}
+                columnBanners={columnBannersList}
+                allBanners={allBannersList}
+                columnNames={columnNames}
+                prerenderedThumbnails={bannerThumbnails}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content - Full Width Board with Floating Sidebars */}
+      <div className="flex-1 relative overflow-hidden">
+        {/* Whiteboard - Infinity Board - Full Width */}
+        <InfinityBoard zoom={zoom} ref={infinityBoardRef} onClick={handleWhiteboardClick}>
+          <div className="flex gap-16 items-start">
+            {columns.map((column, columnIndex) => (
+              <div key={column.id} className="flex items-start gap-8">
+                <BannerColumn
+                  column={column}
+                  columnIndex={columnIndex}
+                  selectedFormatId={selectedFormat?.id || null}
+                  activeBannerId={activeBanner}
+                  getContent={getContent}
+                  onBannerClick={handleBannerClick}
+                  onAddChildren={handleAddChildren}
+                  onRemoveChild={handleRemoveChild}
+                  onDeleteColumn={deleteColumn}
+                  zoom={zoom}
+                  customFormats={getCustomFormatsByCategory(column.category)}
+                  selectedElement={selectedElement}
+                  onElementSelect={handleElementSelect}
+                  onContentUpdate={(formatId, partialContent) => {
+                    const currentContent = getContent(formatId);
+                    updateBannerContent(formatId, { ...currentContent, ...partialContent });
+                  }}
+                  multiSelectedIds={multiSelectedIds}
+                  onMultiSelect={handleMultiSelect}
+                />
+
+                {/* Horizontal Propagation Arrow - Show between columns */}
+                {columnIndex < columns.length - 1 && (
+                  <FixedScale zoom={zoom} className="flex items-center justify-center mt-20">
+                    <div className="h-12 w-12 rounded-full bg-orange-500 flex items-center justify-center shadow-lg">
+                      <ArrowRight className="h-6 w-6 text-white" />
+                    </div>
+                  </FixedScale>
+                )}
+
+                {/* Add Column Buttons - Show after last column */}
+                {columnIndex === columns.length - 1 && (
+                  <FixedScale zoom={zoom} className="flex flex-col gap-4 mt-20">
+                    {/* Only show Add Horizontal if we don't have a horizontal column yet */}
+                    {!columns.some((col) => col.category === 'horizontal') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addColumn('horizontal')}
+                        className="gap-2 whitespace-nowrap"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                        Add Horizontal
+                      </Button>
+                    )}
+                    {/* Only show Add Vertical if we don't have a vertical column yet */}
+                    {!columns.some((col) => col.category === 'vertical') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addColumn('vertical')}
+                        className="gap-2 whitespace-nowrap"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                        Add Vertical
+                      </Button>
+                    )}
+                  </FixedScale>
+                )}
+              </div>
+            ))}
+          </div>
+        </InfinityBoard>
+
+        {/* Left Sidebar - Floating Overlay */}
+        <div
+          className={`absolute left-0 top-0 bottom-0 z-20 transition-transform duration-300 ${
+            sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'
+          }`}
+          style={{ width: '320px' }}
+        >
+          <LeftSidebar
+            onAddBannerSize={(formatId) => console.log('Add size:', formatId)}
+            customFormats={customFormats}
+            onAddCustomFormat={addCustomFormat}
+            onDeleteCustomFormat={deleteCustomFormat}
+            selectedFormat={selectedFormat}
+            content={selectedFormat ? getContent(selectedFormat.id) : undefined}
+            onContentChange={handleContentChange}
+            onElementSelect={handleElementSelect}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
+          />
+        </div>
+
+        {/* Toggle Left Sidebar Button - Shows when collapsed */}
+        {sidebarCollapsed && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSidebarCollapsed(false)}
+            className="absolute left-4 top-4 z-30 shadow-lg"
+            title="Show Sidebar"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Right Sidebar - Floating Overlay (Editor) */}
+        <div className="absolute right-0 top-0 bottom-0 z-20">
+          <BannerEditor
+            selectedFormat={selectedFormat}
+            isMaster={selectedFormat ? isMaster(selectedFormat.id) : false}
+            isSuperMaster={selectedFormat ? isSuperMaster(selectedFormat.id) : false}
+            content={selectedFormat ? getContent(selectedFormat.id) : DEFAULT_CONTENT}
+            onContentChange={handleContentChange}
+            onClose={() => setSelectedFormat(null)}
+            selectedElement={selectedElement}
+            onElementSelect={handleElementSelect}
+            onSmartPosition={
+              selectedFormat
+                ? () => {
+                    applySmartPositioningSingle(selectedFormat.id);
+                    toast.success(`Smart Layout applied to ${selectedFormat.name}`);
+                  }
+                : undefined
+            }
+            multiSelectedIds={multiSelectedIds}
+            onGroupElements={handleGroupElements}
+            onUngroupElements={handleUngroupElements}
+          />
+        </div>
+
+        {/* Zoom Controls - Floating in bottom-right corner */}
+        <div
+          className={`absolute bottom-4 z-30 pointer-events-auto transition-all duration-300 ${
+            selectedFormat ? 'right-[340px]' : 'right-4'
+          } ${!sidebarCollapsed ? 'left-[340px]' : 'left-4'}`}
+        >
+          <div className="flex justify-end">
+            <ZoomControls zoom={zoom} onZoomChange={setZoom} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
