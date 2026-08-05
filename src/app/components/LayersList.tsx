@@ -24,10 +24,17 @@ import {
   ImagePlus,
 } from 'lucide-react';
 import { Badge } from './ui/badge';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
-import { useRef, useState } from 'react';
-import { useDrag, useDrop, type DropTargetMonitor } from 'react-dnd';
+import { useState } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface LayersListProps {
   content: BannerContent;
@@ -125,8 +132,23 @@ export function LayersList({
     layers.length +
     (content.groups || []).length;
 
+  const sensors = useSensors(
+    // distance: 5 lets plain clicks through (select) and only starts a drag
+    // after the pointer moves — required because the whole row is draggable.
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = layers.findIndex((l) => l.id === active.id);
+    const newIndex = layers.findIndex((l) => l.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    moveLayer(oldIndex, newIndex);
+  };
+
   return (
-    <DndProvider backend={HTML5Backend}>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="h-full flex flex-col bg-white min-h-0">
         {/* Header */}
         <div className="p-4 border-b bg-gradient-to-r from-gray-50 to-gray-100 flex-shrink-0">
@@ -274,20 +296,20 @@ export function LayersList({
           )}
 
           {/* Draggable Layers (texts + shapes, NO CTAs) */}
-          {layers.map((layer, layerIndex) => (
-            <DraggableLayerItem
-              key={layer.id}
-              layer={layer}
-              layerIndex={layerIndex}
-              isSelected={isSelected(layer.type, layer.id, layer.index)}
-              isMultiSelected={(multiSelectedIds || []).includes(layer.id)}
-              onElementSelect={onElementSelect}
-              moveLayer={moveLayer}
-            />
-          ))}
+          <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
+            {layers.map((layer) => (
+              <DraggableLayerItem
+                key={layer.id}
+                layer={layer}
+                isSelected={isSelected(layer.type, layer.id, layer.index)}
+                isMultiSelected={(multiSelectedIds || []).includes(layer.id)}
+                onElementSelect={onElementSelect}
+              />
+            ))}
+          </SortableContext>
         </div>
       </div>
-    </DndProvider>
+    </DndContext>
   );
 }
 
@@ -578,70 +600,20 @@ function GroupLayerItem({
 // ═══════════════════════════════════════════════════════════════════════════════
 interface DraggableLayerItemProps {
   layer: LayerItem;
-  layerIndex: number;
   isSelected: boolean;
   isMultiSelected?: boolean;
   onElementSelect: (element: SelectedElement | null) => void;
-  moveLayer: (dragIndex: number, hoverIndex: number) => void;
 }
 
 function DraggableLayerItem({
   layer,
-  layerIndex,
   isSelected,
   isMultiSelected,
   onElementSelect,
-  moveLayer,
 }: DraggableLayerItemProps) {
-  const ref = useRef<HTMLButtonElement>(null);
-
-  const [{ isDragging }, drag] = useDrag({
-    type: 'layer',
-    item: { index: layerIndex },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
-    }),
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: layer.id,
   });
-
-  const [{ handlerId }, drop] = useDrop<
-    { index: number },
-    void,
-    { handlerId: ReturnType<DropTargetMonitor['getHandlerId']> }
-  >({
-    accept: 'layer',
-    collect(monitor) {
-      return {
-        handlerId: monitor.getHandlerId(),
-      };
-    },
-    hover(item: { index: number }, monitor) {
-      if (!ref.current) {
-        return;
-      }
-      const dragIndex = item.index;
-      const hoverIndex = layerIndex;
-      if (dragIndex === hoverIndex) {
-        return;
-      }
-
-      const hoverBoundingRect = ref.current?.getBoundingClientRect();
-      const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
-      const clientOffset = monitor.getClientOffset();
-      const hoverClientY = clientOffset!.y - hoverBoundingRect.top;
-
-      if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY) {
-        return;
-      }
-      if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY) {
-        return;
-      }
-
-      moveLayer(dragIndex, hoverIndex);
-      item.index = hoverIndex;
-    },
-  });
-
-  drag(drop(ref));
 
   const getLayerStyle = () => {
     switch (layer.type) {
@@ -694,17 +666,23 @@ function DraggableLayerItem({
 
   return (
     <button
-      ref={ref}
+      ref={setNodeRef}
       onClick={() => onElementSelect({ type: layer.type, id: layer.id, index: layer.index })}
       className={`
         w-full flex items-center gap-3 p-3 rounded-lg transition-all text-left
         ${isMultiSelected && !isSelected ? 'bg-teal-50 border-2 border-teal-400' : `${style.bgColor} border-2 ${style.borderColor}`}
         ${isSelected ? 'shadow-sm' : 'hover:bg-gray-100 hover:border-gray-300'}
-        ${isDragging ? 'opacity-50' : 'opacity-100'}
         cursor-move
       `}
-      style={{ opacity: isDragging ? 0.5 : 1 }}
-      data-handler-id={handlerId}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 10 : undefined,
+        position: 'relative',
+      }}
+      {...attributes}
+      {...listeners}
     >
       {/* Drag Handle */}
       <div className="flex-shrink-0">

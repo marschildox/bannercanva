@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Plus, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Search, Plus, Check, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
 import { Button } from '../ui/button';
@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 interface SizesPanelProps {
   onAddBannerSize?: (formatId: string) => void;
+  addedFormatIds?: string[];
   customFormats?: BannerFormat[];
   onAddCustomFormat?: (width: number, height: number, name: string) => BannerFormat;
   onDeleteCustomFormat?: (id: string) => void;
@@ -26,6 +27,7 @@ interface FormatCategory {
 
 export function SizesPanel({
   onAddBannerSize,
+  addedFormatIds = [],
   customFormats = [],
   onAddCustomFormat,
   onDeleteCustomFormat,
@@ -201,39 +203,82 @@ export function SizesPanel({
                 {isExpanded && (
                   <div className="mt-1 space-y-0.5">
                     {filteredFormats.map((format) => {
+                      const isAdded = addedFormatIds.includes(format.id);
+
+                      // Mini aspect-ratio preview (max 28x28 box)
+                      const previewScale = 24 / Math.max(format.width, format.height);
+                      const previewW = Math.max(6, Math.round(format.width * previewScale));
+                      const previewH = Math.max(6, Math.round(format.height * previewScale));
+
                       return (
-                        <div
+                        <button
                           key={format.id}
-                          className="flex items-center gap-2 h-12 px-2 rounded-lg hover:bg-gray-50 transition-colors group"
+                          onClick={() => onAddBannerSize?.(format.id)}
+                          className={`w-full flex items-center gap-2 h-12 px-2 rounded-lg transition-colors group text-left ${
+                            isAdded
+                              ? 'bg-green-50 hover:bg-green-100'
+                              : 'hover:bg-blue-50 cursor-pointer'
+                          }`}
+                          title={isAdded ? `${format.name} is on the board` : `Add ${format.name}`}
                         >
+                          {/* Aspect-ratio thumbnail */}
+                          <div className="flex items-center justify-center w-8 h-8 flex-shrink-0">
+                            <div
+                              className={`rounded-[2px] border ${
+                                isAdded
+                                  ? 'bg-green-200 border-green-400'
+                                  : 'bg-gray-200 border-gray-300 group-hover:bg-blue-200 group-hover:border-blue-400'
+                              }`}
+                              style={{ width: previewW, height: previewH }}
+                            />
+                          </div>
+
                           <div className="flex-1 overflow-hidden">
                             <div className="text-sm font-medium text-gray-900 truncate">
                               {format.name}
                             </div>
                             <div className="text-xs text-gray-500">
                               {format.width} × {format.height} px
-                              <span className="text-gray-400 ml-2">
-                                ({format.aspectRatio.toFixed(2)})
-                              </span>
                             </div>
                           </div>
 
+                          {/* Add / added indicator */}
+                          {isAdded ? (
+                            <span className="flex items-center gap-1 text-[10px] font-semibold text-green-700 uppercase">
+                              <Check className="h-3.5 w-3.5" /> On board
+                            </span>
+                          ) : (
+                            <span className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 transition-opacity">
+                              <Plus className="h-3.5 w-3.5 text-white" />
+                            </span>
+                          )}
+
                           {/* Delete button for custom formats */}
                           {isCustom && onDeleteCustomFormat && (
-                            <button
+                            <span
+                              role="button"
+                              tabIndex={0}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (confirm(`Delete "${format.name}"?`)) {
                                   onDeleteCustomFormat(format.id);
                                 }
                               }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.stopPropagation();
+                                  if (confirm(`Delete "${format.name}"?`)) {
+                                    onDeleteCustomFormat(format.id);
+                                  }
+                                }
+                              }}
                               className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 transition-opacity"
                               title="Delete custom size"
                             >
                               <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                            </button>
+                            </span>
                           )}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>

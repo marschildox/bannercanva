@@ -15,15 +15,18 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          radix: [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-tooltip',
-            '@radix-ui/react-scroll-area',
-            '@radix-ui/react-slider',
-          ],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (
+            id.includes('/react-dom/') ||
+            id.includes('/react/') ||
+            id.includes('/scheduler/')
+          ) {
+            return 'react';
+          }
+          if (id.includes('@radix-ui') || id.includes('@floating-ui')) {
+            return 'radix';
+          }
         },
       },
     },

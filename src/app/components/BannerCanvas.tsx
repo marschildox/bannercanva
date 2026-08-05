@@ -1287,7 +1287,9 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
               return (
                 <div key={textElement.id}>
                   <div
-                    ref={(el) => textRefs.current.set(textElement.id, el)}
+                    ref={(el) => {
+                      textRefs.current.set(textElement.id, el);
+                    }}
                     style={textFrameStyle}
                     onMouseDown={(e) => handleTextMouseDown(e, textElement, index)}
                     onClick={(e) => {
@@ -1630,7 +1632,9 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
                             >
                               {/* CTA Group: rectangle + text */}
                               <div
-                                ref={(el) => ctaRefs.current.set(cta.id, el)}
+                                ref={(el) => {
+                                  ctaRefs.current.set(cta.id, el);
+                                }}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleElementClick({ type: 'cta', id: cta.id, index }, e);
@@ -2135,8 +2139,9 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
           </div>
         </FixedScale>
 
-        {/* Format info */}
-        <FixedScale zoom={zoom} className="mt-2 text-center">
+        {/* Format info — pointer-events-none so the label never blocks clicks
+            on neighbouring banners at low zoom (FixedScale grows in world space) */}
+        <FixedScale zoom={zoom} className="mt-2 text-center pointer-events-none">
           <p className="text-xs font-medium text-gray-700">{format.name}</p>
           <p className="text-xs text-gray-500">
             {format.width} × {format.height}

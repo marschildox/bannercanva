@@ -10,6 +10,7 @@ type TabType = 'insert' | 'templates' | 'sizes';
 
 interface LeftSidebarProps {
   onAddBannerSize?: (formatId: string) => void;
+  addedFormatIds?: string[];
   customFormats?: BannerFormat[];
   onAddCustomFormat?: (width: number, height: number, name: string) => BannerFormat;
   onDeleteCustomFormat?: (id: string) => void;
@@ -23,6 +24,7 @@ interface LeftSidebarProps {
 
 export function LeftSidebar({
   onAddBannerSize,
+  addedFormatIds = [],
   customFormats = [],
   onAddCustomFormat,
   onDeleteCustomFormat,
@@ -191,6 +193,7 @@ export function LeftSidebar({
         {activeTab === 'sizes' && (
           <SizesPanel
             onAddBannerSize={onAddBannerSize}
+            addedFormatIds={addedFormatIds}
             customFormats={customFormats}
             onAddCustomFormat={onAddCustomFormat}
             onDeleteCustomFormat={onDeleteCustomFormat}

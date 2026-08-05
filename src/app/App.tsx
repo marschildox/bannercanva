@@ -1,5 +1,12 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { DEFAULT_CONTENT, SelectedElement, ElementGroup } from './types/banner';
+import {
+  DEFAULT_CONTENT,
+  SelectedElement,
+  ElementGroup,
+  SQUARE_FORMATS,
+  HORIZONTAL_FORMATS,
+  VERTICAL_FORMATS,
+} from './types/banner';
 import { BannerColumn } from './components/BannerColumn';
 import { BannerEditor } from './components/BannerEditor';
 import { ExportToolbar } from './components/ExportToolbar';
@@ -230,6 +237,38 @@ export default function App() {
     formats.forEach((format) => addChildBanner(columnIndex, format));
   };
 
+  // Add a banner size picked from the Sizes panel: routes it to the column of
+  // its category, creating the column (with this size as master) if needed.
+  const handleAddBannerSize = useCallback(
+    (formatId: string) => {
+      const format = [
+        ...SQUARE_FORMATS,
+        ...HORIZONTAL_FORMATS,
+        ...VERTICAL_FORMATS,
+        ...customFormats,
+      ].find((f) => f.id === formatId);
+      if (!format) return;
+
+      const alreadyOnBoard = columns.some(
+        (col) =>
+          col.masterFormat.id === format.id || col.childFormats.some((f) => f.id === format.id),
+      );
+      if (alreadyOnBoard) {
+        toast.info(`${format.name} is already on the board`);
+        return;
+      }
+
+      const columnIndex = columns.findIndex((col) => col.category === format.category);
+      if (columnIndex >= 0) {
+        addChildBanner(columnIndex, format);
+      } else if (format.category !== 'square') {
+        addColumn(format.category, format);
+      }
+      toast.success(`${format.name} (${format.width}×${format.height}) added to the board`);
+    },
+    [columns, customFormats, addChildBanner, addColumn],
+  );
+
   const handleRemoveChild = (columnIndex: number, formatId: string) => {
     const column = columns[columnIndex];
     const childIndex = column.childFormats.findIndex((f) => f.id === formatId);
@@ -286,7 +325,12 @@ export default function App() {
       {/* Main Content - Full Width Board with Floating Sidebars */}
       <div className="flex-1 relative overflow-hidden">
         {/* Whiteboard - Infinity Board - Full Width */}
-        <InfinityBoard zoom={zoom} ref={infinityBoardRef} onClick={handleWhiteboardClick}>
+        <InfinityBoard
+          zoom={zoom}
+          onZoomChange={setZoom}
+          ref={infinityBoardRef}
+          onClick={handleWhiteboardClick}
+        >
           <div className="flex gap-16 items-start">
             {columns.map((column, columnIndex) => (
               <div key={column.id} className="flex items-start gap-8">
@@ -363,7 +407,8 @@ export default function App() {
           style={{ width: '320px' }}
         >
           <LeftSidebar
-            onAddBannerSize={(formatId) => console.log('Add size:', formatId)}
+            onAddBannerSize={handleAddBannerSize}
+            addedFormatIds={allBannersList.map((b) => b.id)}
             customFormats={customFormats}
             onAddCustomFormat={addCustomFormat}
             onDeleteCustomFormat={deleteCustomFormat}
@@ -421,7 +466,16 @@ export default function App() {
           } ${!sidebarCollapsed ? 'left-[340px]' : 'left-4'}`}
         >
           <div className="flex justify-end">
-            <ZoomControls zoom={zoom} onZoomChange={setZoom} />
+            <ZoomControls
+              zoom={zoom}
+              onZoomChange={setZoom}
+              onZoomToFit={() =>
+                infinityBoardRef.current?.zoomToFit({
+                  left: sidebarCollapsed ? 0 : 320,
+                  right: selectedFormat ? 320 : 0,
+                })
+              }
+            />
           </div>
         </div>
       </div>

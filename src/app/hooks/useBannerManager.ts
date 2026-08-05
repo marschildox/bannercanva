@@ -37,13 +37,14 @@ export function useBannerManager(initialContent: BannerContent) {
     });
   }, []);
 
-  // Add a new column (horizontal or vertical)
-  const addColumn = useCallback((category: 'horizontal' | 'vertical') => {
+  // Add a new column (horizontal or vertical). An explicit master format can
+  // be provided (e.g. when the user picks a specific size from the Sizes panel).
+  const addColumn = useCallback((category: 'horizontal' | 'vertical', master?: BannerFormat) => {
     const formats = category === 'horizontal' ? HORIZONTAL_FORMATS : VERTICAL_FORMATS;
     // For horizontal, use Facebook Sponsored Message (index 16) instead of the first format
     // For vertical, use the first format
     const masterFormatIndex = category === 'horizontal' ? 16 : 0;
-    const masterFormat = formats[masterFormatIndex];
+    const masterFormat = master ?? formats[masterFormatIndex];
 
     const newColumn: BannerColumn = {
       id: `col-${Date.now()}`,
@@ -58,9 +59,17 @@ export function useBannerManager(initialContent: BannerContent) {
     setBannerContents((prev) => {
       const newContents = new Map(prev);
       if (!newContents.has(masterFormat.id)) {
-        // Inherit from Super Master (250x250 - first square banner)
+        // Inherit from Super Master, adapting the layout to the new format's
+        // dimensions so elements distribute correctly instead of being a raw copy
         const superMasterContent = prev.get(SQUARE_FORMATS[3].id);
-        newContents.set(masterFormat.id, { ...superMasterContent! });
+        newContents.set(
+          masterFormat.id,
+          computeSmartLayoutFromReference(
+            { ...superMasterContent! },
+            masterFormat,
+            SQUARE_FORMATS[3],
+          ),
+        );
       }
       return newContents;
     });
@@ -70,26 +79,22 @@ export function useBannerManager(initialContent: BannerContent) {
   const deleteColumn = useCallback(
     (columnIndex: number) => {
       if (columnIndex === 0) return; // Cannot delete the first column
+      const deletedColumn = columns[columnIndex];
+      if (!deletedColumn) return;
 
-      setColumns((prev) => {
-        const newColumns = prev.filter((_, index) => index !== columnIndex);
+      setColumns((prev) => prev.filter((_, index) => index !== columnIndex));
 
-        // Clean up banner contents for deleted column
-        const deletedColumn = prev[columnIndex];
-        setBannerContents((prevContents) => {
-          const newContents = new Map(prevContents);
-          [deletedColumn.masterFormat, ...deletedColumn.childFormats].forEach((format) => {
-            newContents.delete(format.id);
-          });
-          return newContents;
+      // Clean up banner contents for deleted column
+      setBannerContents((prevContents) => {
+        const newContents = new Map(prevContents);
+        [deletedColumn.masterFormat, ...deletedColumn.childFormats].forEach((format) => {
+          newContents.delete(format.id);
         });
-
-        return newColumns;
+        return newContents;
       });
 
       // Deselect if selected banner was in deleted column
       if (selectedFormat) {
-        const deletedColumn = columns[columnIndex];
         const allFormats = [deletedColumn.masterFormat, ...deletedColumn.childFormats];
         if (allFormats.some((f) => f.id === selectedFormat.id)) {
           setSelectedFormat(null);
@@ -100,68 +105,98 @@ export function useBannerManager(initialContent: BannerContent) {
   );
 
   // Add a child banner to a column
-  const addChildBanner = useCallback((columnIndex: number, format: BannerFormat) => {
-    setColumns((prev) => {
-      const newColumns = [...prev];
-      const column = newColumns[columnIndex];
+  const addChildBanner = useCallback(
+    (columnIndex: number, format: BannerFormat) => {
+      const column = columns[columnIndex];
+      if (!column) return;
+      // Guard against duplicates (same size can only be on the board once)
+      if (
+        column.childFormats.some((f) => f.id === format.id) ||
+        column.masterFormat.id === format.id
+      ) {
+        return;
+      }
 
-      // Add the provided format
-      column.childFormats.push(format);
+      setColumns((prev) =>
+        prev.map((col, index) =>
+          index === columnIndex ? { ...col, childFormats: [...col.childFormats, format] } : col,
+        ),
+      );
 
-      // Initialize content for new banner
+      // Initialize content for new banner, adapting the master's layout to the
+      // child's dimensions (proportional scaling or zone-based re-layout)
       setBannerContents((prevContents) => {
         const newContents = new Map(prevContents);
         const masterContent = prevContents.get(column.masterFormat.id);
-        newContents.set(format.id, { ...masterContent! });
+        newContents.set(
+          format.id,
+          computeSmartLayoutFromReference({ ...masterContent! }, format, column.masterFormat),
+        );
         return newContents;
       });
-
-      return newColumns;
-    });
-  }, []);
+    },
+    [columns],
+  );
 
   // Delete a child banner from a column
   const deleteChildBanner = useCallback(
     (columnIndex: number, childIndex: number) => {
-      setColumns((prev) => {
-        const newColumns = [...prev];
-        const column = newColumns[columnIndex];
-        const deletedFormat = column.childFormats[childIndex];
+      const column = columns[columnIndex];
+      const deletedFormat = column?.childFormats[childIndex];
+      if (!deletedFormat) return;
 
-        column.childFormats.splice(childIndex, 1);
+      setColumns((prev) =>
+        prev.map((col, index) =>
+          index === columnIndex
+            ? { ...col, childFormats: col.childFormats.filter((_, i) => i !== childIndex) }
+            : col,
+        ),
+      );
 
-        // Clean up content
-        setBannerContents((prevContents) => {
-          const newContents = new Map(prevContents);
-          newContents.delete(deletedFormat.id);
-          return newContents;
-        });
-
-        // Deselect if deleted
-        if (selectedFormat?.id === deletedFormat.id) {
-          setSelectedFormat(null);
-        }
-
-        return newColumns;
+      // Clean up content
+      setBannerContents((prevContents) => {
+        const newContents = new Map(prevContents);
+        newContents.delete(deletedFormat.id);
+        return newContents;
       });
+
+      // Deselect if deleted
+      if (selectedFormat?.id === deletedFormat.id) {
+        setSelectedFormat(null);
+      }
     },
-    [selectedFormat],
+    [columns, selectedFormat],
   );
 
-  // Update banner content with master-child propagation
+  // Update banner content with master-child propagation.
+  // Propagated content is re-laid-out for each target format so elements
+  // distribute correctly in every frame instead of receiving a raw copy.
   const updateBannerContent = useCallback(
     (formatId: string, content: BannerContent) => {
       setBannerContents((prev) => {
         const newContents = new Map(prev);
         newContents.set(formatId, content);
 
-        // Check if this is the Super Master (250x250 - first square banner)
+        // Format lookup for adapting layouts during propagation
+        const formatById = new Map<string, BannerFormat>();
+        columns.forEach((col) => {
+          formatById.set(col.masterFormat.id, col.masterFormat);
+          col.childFormats.forEach((f) => formatById.set(f.id, f));
+        });
+
+        const adaptTo = (targetId: string, sourceFormat: BannerFormat): BannerContent => {
+          const targetFormat = formatById.get(targetId);
+          if (!targetFormat || targetFormat.id === sourceFormat.id) return { ...content };
+          return computeSmartLayoutFromReference({ ...content }, targetFormat, sourceFormat);
+        };
+
+        // Check if this is the Super Master (first square banner)
         const isSuperMaster = formatId === SQUARE_FORMATS[3].id;
         if (isSuperMaster) {
           // Propagate to ALL banners
           newContents.forEach((_, id) => {
             if (id !== formatId) {
-              newContents.set(id, { ...content });
+              newContents.set(id, adaptTo(id, SQUARE_FORMATS[3]));
             }
           });
           return newContents;
@@ -173,7 +208,7 @@ export function useBannerManager(initialContent: BannerContent) {
           // Propagate to children in this column
           const column = columns[columnIndex];
           column.childFormats.forEach((childFormat) => {
-            newContents.set(childFormat.id, { ...content });
+            newContents.set(childFormat.id, adaptTo(childFormat.id, column.masterFormat));
           });
         }
 

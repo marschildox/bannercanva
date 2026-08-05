@@ -3,43 +3,87 @@ import React, {
   useRef,
   useCallback,
   ReactNode,
-  WheelEvent,
   MouseEvent,
   useImperativeHandle,
   forwardRef,
   useEffect,
 } from 'react';
-import { Move, Home } from 'lucide-react';
-import { Button } from './ui/button';
 
 interface InfinityBoardProps {
   children: ReactNode;
   zoom?: number;
+  minZoom?: number;
+  maxZoom?: number;
+  onZoomChange?: (zoom: number) => void;
   onClick?: (e: React.MouseEvent) => void;
+}
+
+export interface ViewportInsets {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
 }
 
 export interface InfinityBoardRef {
   panTo: (x: number, y: number) => void;
   centerOn: (element: HTMLElement) => void;
   reset: () => void;
+  zoomToFit: (insets?: ViewportInsets) => void;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
+
+/**
+ * Infinite pannable/zoomable canvas with Miro/FigJam-style navigation:
+ *
+ * - Two-finger scroll / mouse wheel  → pan
+ * - Pinch (ctrl+wheel) or cmd+wheel  → zoom towards the cursor
+ * - Drag empty canvas               → pan
+ * - Space + drag (anywhere)         → pan
+ * - Middle mouse button drag        → pan
+ * - Zoom-to-fit via imperative ref  → frames all content
+ */
 export const InfinityBoard = forwardRef<InfinityBoardRef, InfinityBoardProps>(
-  ({ children, zoom = 1, onClick }, ref) => {
-    const [pan, setPan] = useState({ x: 0, y: 0 }); // Will be initialized to center
+  ({ children, zoom = 1, minZoom = 0.1, maxZoom = 4, onZoomChange, onClick }, ref) => {
+    const [pan, setPan] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [spacePressed, setSpacePressed] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+    const contentRef = useRef<HTMLDivElement>(null);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const didPanRef = useRef(false);
+
+    // Refs mirrored for native (non-React) event handlers
+    const zoomRef = useRef(zoom);
+    const panRef = useRef(pan);
+    const onZoomChangeRef = useRef(onZoomChange);
+    zoomRef.current = zoom;
+    panRef.current = pan;
+    onZoomChangeRef.current = onZoomChange;
+    const minZoomRef = useRef(minZoom);
+    const maxZoomRef = useRef(maxZoom);
+    minZoomRef.current = minZoom;
+    maxZoomRef.current = maxZoom;
 
     // Initialize pan to center of viewport
     useEffect(() => {
       if (containerRef.current && !isInitialized) {
         const rect = containerRef.current.getBoundingClientRect();
-        setPan({
-          x: rect.width / 2,
-          y: rect.height / 2,
-        });
+        setPan({ x: rect.width / 2, y: rect.height / 2 });
         setIsInitialized(true);
       }
     }, [isInitialized]);
@@ -47,10 +91,7 @@ export const InfinityBoard = forwardRef<InfinityBoardRef, InfinityBoardProps>(
     const resetView = useCallback(() => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        setPan({
-          x: rect.width / 2,
-          y: rect.height / 2,
-        });
+        setPan({ x: rect.width / 2, y: rect.height / 2 });
       }
     }, []);
 
@@ -64,77 +105,180 @@ export const InfinityBoard = forwardRef<InfinityBoardRef, InfinityBoardProps>(
       const containerRect = containerRef.current.getBoundingClientRect();
       const elementRect = element.getBoundingClientRect();
 
-      // Calculate the center of the container
-      const containerCenterX = containerRect.width / 2;
-      const containerCenterY = containerRect.height / 2;
+      const offsetX =
+        containerRect.left + containerRect.width / 2 - (elementRect.left + elementRect.width / 2);
+      const offsetY =
+        containerRect.top + containerRect.height / 2 - (elementRect.top + elementRect.height / 2);
 
-      // Calculate the center of the element in screen coordinates
-      const elementCenterX = elementRect.left + elementRect.width / 2;
-      const elementCenterY = elementRect.top + elementRect.height / 2;
-
-      // Calculate the offset needed to center the element
-      const offsetX = containerCenterX - elementCenterX;
-      const offsetY = containerCenterY - elementCenterY;
-
-      // Apply the offset to current pan
-      setPan((prev) => ({
-        x: prev.x + offsetX,
-        y: prev.y + offsetY,
-      }));
+      setPan((prev) => ({ x: prev.x + offsetX, y: prev.y + offsetY }));
     }, []);
 
-    // Expose methods via ref
+    const fitOnce = useCallback((insets: ViewportInsets = {}) => {
+      const container = containerRef.current;
+      const content = contentRef.current;
+      if (!container || !content) return;
+
+      const cRect = container.getBoundingClientRect();
+      const rect = content.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      // Usable viewport excluding floating side panels
+      const insetLeft = insets.left ?? 0;
+      const insetRight = insets.right ?? 0;
+      const insetTop = insets.top ?? 0;
+      const insetBottom = insets.bottom ?? 0;
+      const viewW = cRect.width - insetLeft - insetRight;
+      const viewH = cRect.height - insetTop - insetBottom;
+
+      const currentZoom = zoomRef.current;
+      const worldW = rect.width / currentZoom;
+      const worldH = rect.height / currentZoom;
+      const margin = 64;
+
+      const newZoom = clamp(
+        Math.min((viewW - margin) / worldW, (viewH - margin) / worldH),
+        minZoomRef.current,
+        maxZoomRef.current,
+      );
+
+      // World-space origin of the content box
+      const worldX = (rect.left - cRect.left - panRef.current.x) / currentZoom;
+      const worldY = (rect.top - cRect.top - panRef.current.y) / currentZoom;
+
+      const newPan = {
+        x: insetLeft + (viewW - worldW * newZoom) / 2 - worldX * newZoom,
+        y: insetTop + (viewH - worldH * newZoom) / 2 - worldY * newZoom,
+      };
+      panRef.current = newPan;
+      zoomRef.current = newZoom;
+      setPan(newPan);
+      onZoomChangeRef.current?.(newZoom);
+    }, []);
+
+    const zoomToFit = useCallback(
+      (insets: ViewportInsets = {}) => {
+        // Two passes: fixed-scale UI elements (headers, buttons) resize in
+        // world space after a zoom change, shifting the content bounds — the
+        // second pass runs after that re-layout and converges the fit.
+        fitOnce(insets);
+        requestAnimationFrame(() => requestAnimationFrame(() => fitOnce(insets)));
+      },
+      [fitOnce],
+    );
+
     useImperativeHandle(ref, () => ({
       panTo,
       centerOn,
       reset: resetView,
+      zoomToFit,
     }));
+
+    // Space key → temporary pan mode (like Figma/Miro)
+    useEffect(() => {
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.code === 'Space' && !isTypingTarget(e.target)) {
+          e.preventDefault();
+          setSpacePressed(true);
+        }
+      };
+      const onKeyUp = (e: KeyboardEvent) => {
+        if (e.code === 'Space') setSpacePressed(false);
+      };
+      window.addEventListener('keydown', onKeyDown);
+      window.addEventListener('keyup', onKeyUp);
+      return () => {
+        window.removeEventListener('keydown', onKeyDown);
+        window.removeEventListener('keyup', onKeyUp);
+      };
+    }, []);
+
+    // Native wheel listener (React's onWheel is passive — preventDefault
+    // wouldn't stop browser page-zoom on pinch/ctrl+wheel)
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const onWheel = (e: globalThis.WheelEvent) => {
+        e.preventDefault();
+
+        if (e.ctrlKey || e.metaKey) {
+          // Pinch gesture or ctrl/cmd + wheel → zoom towards cursor
+          const rect = container.getBoundingClientRect();
+          const px = e.clientX - rect.left;
+          const py = e.clientY - rect.top;
+
+          const oldZoom = zoomRef.current;
+          const factor = Math.exp(-e.deltaY * 0.01);
+          const newZoom = clamp(oldZoom * factor, minZoomRef.current, maxZoomRef.current);
+          if (newZoom === oldZoom) return;
+
+          setPan((prev) => ({
+            x: px - ((px - prev.x) * newZoom) / oldZoom,
+            y: py - ((py - prev.y) * newZoom) / oldZoom,
+          }));
+          // Eagerly update the ref so rapid pinch events compound correctly
+          zoomRef.current = newZoom;
+          onZoomChangeRef.current?.(newZoom);
+        } else if (e.shiftKey) {
+          // Shift + wheel → horizontal pan
+          setPan((prev) => ({ ...prev, x: prev.x - (e.deltaY || e.deltaX) }));
+        } else {
+          // Two-finger scroll / wheel → pan
+          setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+        }
+      };
+
+      container.addEventListener('wheel', onWheel, { passive: false });
+      return () => container.removeEventListener('wheel', onWheel);
+    }, []);
 
     const handleMouseDown = useCallback(
       (e: MouseEvent<HTMLDivElement>) => {
-        // Only start panning if clicking on the background (not on a banner or button)
         const target = e.target as HTMLElement;
         const isBackground =
           target === e.currentTarget ||
           target.classList.contains('infinity-grid') ||
           target.classList.contains('infinity-content');
 
-        if (isBackground) {
+        // Pan from anywhere with space or middle button; from background with left button
+        if (spacePressed || e.button === 1 || (isBackground && e.button === 0)) {
           setIsDragging(true);
-          setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+          didPanRef.current = false;
+          dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
           e.preventDefault();
         }
       },
-      [pan],
+      [pan, spacePressed],
     );
 
     const handleMouseMove = useCallback(
       (e: MouseEvent<HTMLDivElement>) => {
         if (isDragging) {
+          didPanRef.current = true;
           setPan({
-            x: e.clientX - dragStart.x,
-            y: e.clientY - dragStart.y,
+            x: e.clientX - dragStartRef.current.x,
+            y: e.clientY - dragStartRef.current.y,
           });
         }
       },
-      [isDragging, dragStart],
+      [isDragging],
     );
 
     const handleMouseUp = useCallback(() => {
       setIsDragging(false);
     }, []);
 
-    const handleWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
-      // Pan with scroll wheel (holding shift for horizontal, default for vertical)
-      if (e.shiftKey) {
-        setPan((prev) => ({ ...prev, x: prev.x - e.deltaY }));
-      } else {
-        setPan((prev) => ({
-          x: prev.x - e.deltaX,
-          y: prev.y - e.deltaY,
-        }));
-      }
-    }, []);
+    const handleClick = useCallback(
+      (e: React.MouseEvent) => {
+        // Suppress click-to-deselect after an actual pan gesture
+        if (didPanRef.current) {
+          didPanRef.current = false;
+          return;
+        }
+        onClick?.(e);
+      },
+      [onClick],
+    );
 
     // Grid pattern for infinite board feel - Professional grid with lines
     const gridSize = 20;
@@ -163,22 +307,21 @@ export const InfinityBoard = forwardRef<InfinityBoardRef, InfinityBoardProps>(
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
         style={{
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isDragging ? 'grabbing' : spacePressed ? 'grab' : 'default',
           flex: 1,
           userSelect: 'none',
           WebkitUserSelect: 'none',
         }}
-        onClick={onClick}
+        onClick={handleClick}
       >
         {/* Infinite Grid Background */}
         <div
-          className="infinity-grid absolute inset-0 pointer-events-none"
+          className="infinity-grid absolute inset-0"
           style={{
             backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(gridPattern)}")`,
             backgroundPosition: `${pan.x % largeGridSize}px ${pan.y % largeGridSize}px`,
-            backgroundSize: `${largeGridSize}px ${largeGridSize}px`,
+            backgroundSize: `${largeGridSize * zoom}px ${largeGridSize * zoom}px`,
           }}
         />
 
@@ -188,16 +331,12 @@ export const InfinityBoard = forwardRef<InfinityBoardRef, InfinityBoardProps>(
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: '0 0',
-            transition: isDragging ? 'none' : 'transform 0.1s ease-out',
           }}
         >
-          {/* Center point indicator */}
-          <div className="absolute top-0 left-0 pointer-events-none">
-            <div className="w-2 h-2 bg-blue-500 rounded-full -translate-x-1 -translate-y-1" />
-          </div>
-
           {/* Content */}
-          <div className="p-16">{children}</div>
+          <div ref={contentRef} className="infinity-content p-16 w-max">
+            {children}
+          </div>
         </div>
       </div>
     );
