@@ -452,7 +452,9 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
                 left: 0,
                 width: `${format.width}px`,
                 height: `${format.height}px`,
-                backgroundImage: `url(${safeContent.backgroundImage})`,
+                ...(safeContent.backgroundImage
+                  ? { backgroundImage: `url(${safeContent.backgroundImage})` }
+                  : {}),
                 backgroundPosition: safeContent.backgroundPosition || 'center',
                 backgroundSize: 'cover',
                 backgroundRepeat: 'no-repeat',
@@ -462,13 +464,15 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
             />
             {/* Hidden CORS pre-loader – warms the browser cache with a
                 CORS-enabled response so html2canvas's useCORS fetch succeeds. */}
-            <img
-              src={safeContent.backgroundImage}
-              alt=""
-              crossOrigin="anonymous"
-              data-cors-preload
-              style={{ display: 'none' }}
-            />
+            {safeContent.backgroundImage && (
+              <img
+                src={safeContent.backgroundImage}
+                alt=""
+                crossOrigin="anonymous"
+                data-cors-preload
+                style={{ display: 'none' }}
+              />
+            )}
             {/* Background selection overlay */}
             <SelectionOverlay active={selectedElement?.type === 'background'} inset />
 
@@ -478,10 +482,13 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
               if (groupedElementIds.has(shape.id)) return null;
               const isShapeSelected =
                 selectedElement?.type === 'shape' && selectedElement.id === shape.id;
-              const shapeX = shape.x || 0;
-              const shapeY = shape.y || 0;
-              const shapeWidth = shape.width || 100;
-              const shapeHeight = shape.height || 100;
+              // Background shapes are full-bleed by definition: when no
+              // explicit rect is set they cover the whole banner, not the
+              // 100x100 default used by foreground shapes.
+              const shapeX = shape.x ?? 0;
+              const shapeY = shape.y ?? 0;
+              const shapeWidth = shape.width ?? format.width;
+              const shapeHeight = shape.height ?? format.height;
               const shapeRotation = shape.rotation || 0;
               const renderBgShape = () => {
                 const shapeColor = hexToRgba(shape.color, shape.opacity);

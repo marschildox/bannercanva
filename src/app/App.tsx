@@ -22,6 +22,8 @@ import { Button } from './components/ui/button';
 import { ChevronRight, ArrowRight, PanelLeft, Sparkles } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { createGroup, dissolveGroup } from './utils/group-helpers';
+import { computeSmartLayout } from './utils/smart-positioning';
+import type { BannerTemplate } from './data/templates';
 
 export default function App() {
   const {
@@ -242,6 +244,36 @@ export default function App() {
     formats.forEach((format) => addChildBanner(columnIndex, format));
   };
 
+  // Apply a template to the selected banner — or to the Super Master (whole
+  // set) when nothing is selected. The current logo is preserved so applying
+  // a template never wipes the user's branding.
+  const handleApplyTemplate = useCallback(
+    (template: BannerTemplate) => {
+      const target = selectedFormat ?? columns[0]?.masterFormat;
+      if (!target) return;
+
+      const current = bannerContents.get(target.id);
+      const content = template.build();
+      if (current?.logo) {
+        content.logo = current.logo;
+        content.logoSize = current.logoSize;
+        content.logoPosition = current.logoPosition;
+      }
+
+      // Lay the template out for the target format BEFORE propagating:
+      // zone positions become explicit stacked coordinates (no overlapping
+      // center texts) and full-bleed scrims get concrete dimensions.
+      updateBannerContent(target.id, computeSmartLayout(content, target));
+      const isMasterTarget =
+        target.id === columns[0]?.masterFormat.id ||
+        columns.some((col) => col.masterFormat.id === target.id);
+      toast.success(
+        `Template "${template.name}" applied${isMasterTarget ? ' — propagated to the set' : ` to ${target.name}`}`,
+      );
+    },
+    [selectedFormat, columns, bannerContents, updateBannerContent],
+  );
+
   // Add a banner size picked from the Sizes panel: routes it to the column of
   // its category, creating the column (with this size as master) if needed.
   const handleAddBannerSize = useCallback(
@@ -413,6 +445,10 @@ export default function App() {
         >
           <LeftSidebar
             onAddBannerSize={handleAddBannerSize}
+            onApplyTemplate={handleApplyTemplate}
+            isMasterSelected={
+              !!selectedFormat && columns.some((c) => c.masterFormat.id === selectedFormat.id)
+            }
             addedFormatIds={allBannersList.map((b) => b.id)}
             customFormats={customFormats}
             onAddCustomFormat={addCustomFormat}

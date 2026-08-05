@@ -4,12 +4,15 @@ import { SizesPanel } from './left-sidebar/SizesPanel';
 import { InsertPanel } from './left-sidebar/InsertPanel';
 import { TemplatesPanel } from './left-sidebar/TemplatesPanel';
 import { BannerFormat, BannerContent, SelectedElement } from '../types/banner';
-import { Badge } from './ui/badge';
 
 type TabType = 'insert' | 'templates' | 'sizes';
 
+import type { BannerTemplate } from '../data/templates';
+
 interface LeftSidebarProps {
   onAddBannerSize?: (formatId: string) => void;
+  onApplyTemplate?: (template: BannerTemplate) => void;
+  isMasterSelected?: boolean;
   addedFormatIds?: string[];
   customFormats?: BannerFormat[];
   onAddCustomFormat?: (width: number, height: number, name: string) => BannerFormat;
@@ -24,6 +27,8 @@ interface LeftSidebarProps {
 
 export function LeftSidebar({
   onAddBannerSize,
+  onApplyTemplate,
+  isMasterSelected,
   addedFormatIds = [],
   customFormats = [],
   onAddCustomFormat,
@@ -39,13 +44,7 @@ export function LeftSidebar({
 
   const tabs = [
     { id: 'insert' as TabType, label: 'Insert', icon: Layers },
-    {
-      id: 'templates' as TabType,
-      label: 'Templates',
-      icon: LayoutTemplate,
-      disabled: true,
-      comingSoon: true,
-    },
+    { id: 'templates' as TabType, label: 'Templates', icon: LayoutTemplate },
     { id: 'sizes' as TabType, label: 'Sizes', icon: Maximize2 },
   ];
 
@@ -57,35 +56,26 @@ export function LeftSidebar({
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
-            const isDisabled = tab.disabled;
 
             return (
               <div key={tab.id} className="relative">
                 <button
                   onClick={() => {
-                    if (!isDisabled) {
-                      setActiveTab(tab.id);
-                      onCollapsedChange?.(false);
-                    }
+                    setActiveTab(tab.id);
+                    onCollapsedChange?.(false);
                   }}
-                  disabled={isDisabled}
                   className={`
                     w-12 h-12 flex items-center justify-center rounded-lg transition-all
                     ${
-                      isDisabled
-                        ? 'opacity-40 cursor-not-allowed text-gray-400'
-                        : isActive
-                          ? 'bg-white text-blue-600 shadow-sm'
-                          : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                      isActive
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-600 hover:bg-white hover:text-gray-900'
                     }
                   `}
-                  title={tab.comingSoon ? `${tab.label} (Coming Soon)` : tab.label}
+                  title={tab.label}
                 >
                   <Icon className="h-5 w-5" />
                 </button>
-                {tab.comingSoon && (
-                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-400 rounded-full border border-white" />
-                )}
               </div>
             );
           })}
@@ -111,35 +101,23 @@ export function LeftSidebar({
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
-          const isDisabled = tab.disabled;
 
           return (
             <div key={tab.id} className="relative">
               <button
-                onClick={() => !isDisabled && setActiveTab(tab.id)}
-                disabled={isDisabled}
+                onClick={() => setActiveTab(tab.id)}
                 className={`
                   w-16 h-16 flex flex-col items-center justify-center gap-1 rounded-lg transition-all
                   ${
-                    isDisabled
-                      ? 'opacity-40 cursor-not-allowed text-gray-400'
-                      : isActive
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                    isActive
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:bg-white hover:text-gray-900'
                   }
                 `}
               >
                 <Icon className="h-5 w-5" />
                 <span className="text-[10px] font-medium">{tab.label}</span>
               </button>
-              {tab.comingSoon && (
-                <Badge
-                  variant="secondary"
-                  className="absolute -top-1 -right-2 text-[8px] px-1 py-0 h-4 bg-yellow-100 text-yellow-700 border-yellow-300"
-                >
-                  Soon
-                </Badge>
-              )}
             </div>
           );
         })}
@@ -189,7 +167,13 @@ export function LeftSidebar({
             onElementSelect={onElementSelect}
           />
         )}
-        {activeTab === 'templates' && <TemplatesPanel />}
+        {activeTab === 'templates' && (
+          <TemplatesPanel
+            onApplyTemplate={onApplyTemplate}
+            selectedFormat={selectedFormat}
+            isMasterSelected={isMasterSelected}
+          />
+        )}
         {activeTab === 'sizes' && (
           <SizesPanel
             onAddBannerSize={onAddBannerSize}
