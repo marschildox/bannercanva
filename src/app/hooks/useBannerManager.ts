@@ -451,5 +451,7 @@ export function useBannerManager(initialContent: BannerContent) {
     patchTextStyles,
     replaceProject,
     startCampaign,
+    /** True when this session restored an autosaved board */
+    hasRestoredProject: restored !== null,
   };
 }

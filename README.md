@@ -4,6 +4,10 @@ Professional banner generator: design one master banner and produce a complete, 
 
 ## Features
 
+### First run
+
+- **Welcome page** — a short explainer on the first visit: what the tool does, the master → variants idea as a diagram, the three steps, and the canvas navigation keys. Dismissed with one click and reopenable any time from the help button in the top bar.
+
 ### Start a campaign in three steps
 
 - **Guided campaign wizard** — describe what you're advertising (product, objective, tone, audience, must-mention facts), set the brand (logo, background, font, button colours), then get the copy. Finishing builds the master design plus a starter set of format columns, laid out for each format.
@@ -20,6 +24,7 @@ Professional banner generator: design one master banner and produce a complete, 
 
 - **Master → child propagation** — edit the Super Master (first 1:1 banner) and every banner in the set updates; edit a column master and only its column updates; edit a child and only that banner changes.
 - **Format-aware layout adaptation** — propagated content is re-laid-out for each target format (proportional scaling for similar aspect ratios, zone-based re-layout for very different ones), so a square design lands correctly on a leaderboard or a story instead of being a raw copy.
+- **Per-axis safe area** — each axis takes its margin from its own dimension (floored at 8px, capped at 96px), so content keeps clear of the frame on extreme ratios where a single margin would collapse — a 970×90 leaderboard gets 58px of side room, not 5px. The layout engine and the renderer share one helper, so estimates and paint always agree.
 - **Templates** — 8 curated, format-agnostic starting designs (product launch, sale, minimal, elegant dark, tech, eco, food, fashion). One click applies a template to the selected banner — or to the Super Master to restyle the whole set. Your logo is preserved.
 
 ### Editor

@@ -13,6 +13,7 @@ import { ExportToolbar } from './components/ExportToolbar';
 import { ProjectMenu } from './components/ProjectMenu';
 import { AiSettingsDialog } from './components/AiSettingsDialog';
 import { CampaignWizard } from './components/CampaignWizard';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import { LeftSidebar } from './components/LeftSidebar';
 import { InfinityBoard, InfinityBoardRef } from './components/InfinityBoard';
 import { FixedScale } from './components/FixedScale';
@@ -22,12 +23,21 @@ import { useCustomFormats } from './hooks/useCustomFormats';
 import { useAutoThumbnails } from './hooks/useAutoThumbnails';
 import { useAutoTextContrast } from './hooks/useAutoTextContrast';
 import { Button } from './components/ui/button';
-import { ChevronRight, ArrowRight, PanelLeft, Sparkles, Wand2, KeyRound } from 'lucide-react';
+import {
+  ChevronRight,
+  ArrowRight,
+  PanelLeft,
+  Sparkles,
+  Wand2,
+  KeyRound,
+  HelpCircle,
+} from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { createGroup, dissolveGroup } from './utils/group-helpers';
 import { computeSmartLayout } from './utils/smart-positioning';
 import type { BannerTemplate } from './data/templates';
 import { loadAiSettings } from './services/ai/settings';
+import { hasSeenWelcome, markWelcomeSeen } from './utils/welcome-storage';
 import type { AiSettings } from './services/ai/types';
 
 export default function App() {
@@ -50,6 +60,7 @@ export default function App() {
     patchTextStyles,
     replaceProject,
     startCampaign,
+    hasRestoredProject,
   } = useBannerManager(DEFAULT_CONTENT);
 
   const { customFormats, addCustomFormat, deleteCustomFormat, getCustomFormatsByCategory } =
@@ -59,6 +70,13 @@ export default function App() {
   const [aiSettings, setAiSettings] = useState<AiSettings>(() => loadAiSettings());
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  // Shown on a first visit; reopenable from the help button
+  const [welcomeOpen, setWelcomeOpen] = useState(() => !hasSeenWelcome());
+
+  const dismissWelcome = useCallback(() => {
+    markWelcomeSeen();
+    setWelcomeOpen(false);
+  }, []);
   const notify = useCallback(
     (message: string, kind: 'success' | 'error') =>
       kind === 'success' ? toast.success(message) : toast.error(message),
@@ -346,6 +364,18 @@ export default function App() {
         onSettingsChange={setAiSettings}
       />
 
+      {/* Welcome / how-it-works */}
+      <WelcomeScreen
+        open={welcomeOpen}
+        hasExistingProject={hasRestoredProject}
+        onStartCampaign={() => {
+          dismissWelcome();
+          setWizardOpen(true);
+        }}
+        onOpenEditor={dismissWelcome}
+        onClose={dismissWelcome}
+      />
+
       {/* Guided campaign setup */}
       <CampaignWizard
         open={wizardOpen}
@@ -362,15 +392,17 @@ export default function App() {
 
       {/* Top Bar */}
       <div className="bg-white border-b shadow-sm z-30 relative">
-        <div className="px-6 py-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="text-lg">Banner Generator</h1>
-              <span className="text-xs text-gray-400 hidden sm:inline">
+        {/* The action row can exceed a narrow viewport; it scrolls inside itself
+            so the document never gains a horizontal scrollbar. */}
+        <div className="px-6 py-2 overflow-x-auto">
+          <div className="flex items-center justify-between gap-4 min-w-max">
+            <div className="flex items-center gap-3 shrink-0">
+              <h1 className="text-lg whitespace-nowrap">Banner Generator</h1>
+              <span className="text-xs text-gray-400 hidden lg:inline">
                 Create responsive banners across multiple formats
               </span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 shrink-0">
               {/* Project: export / import / new */}
               <ProjectMenu
                 columns={columns}
@@ -398,6 +430,16 @@ export default function App() {
                 title="AI settings (API keys, model)"
               >
                 <KeyRound className="h-4 w-4" />
+              </Button>
+              {/* How it works */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setWelcomeOpen(true)}
+                title="How BannerCanva works"
+              >
+                <HelpCircle className="h-4 w-4" />
               </Button>
               {/* Smart Positioning */}
               <Button
