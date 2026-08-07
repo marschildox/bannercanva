@@ -26,5 +26,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npx vite build
+
+      # `vite build` succeeding doesn't prove the bundle runs — a bad chunk
+      # split once shipped a blank page while dev, types and tests were green.
+      - name: Install Chromium for the smoke test
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke-test the production build
+        run: npm run smoke

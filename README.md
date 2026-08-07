@@ -63,17 +63,18 @@ npm run dev        # development server
 
 ## Scripts
 
-| Script                 | What it does                          |
-| ---------------------- | ------------------------------------- |
-| `npm run dev`          | Start the Vite dev server             |
-| `npm run build`        | Typecheck (strict) + production build |
-| `npm run preview`      | Preview the production build          |
-| `npm run test`         | Run the Vitest suite                  |
-| `npm run test:watch`   | Vitest in watch mode                  |
-| `npm run typecheck`    | `tsc --noEmit`                        |
-| `npm run lint`         | ESLint over `src/`                    |
-| `npm run format`       | Prettier write over `src/`            |
-| `npm run format:check` | Prettier check (CI)                   |
+| Script                 | What it does                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `npm run dev`          | Start the Vite dev server                                                             |
+| `npm run build`        | Typecheck (strict) + production build                                                 |
+| `npm run preview`      | Preview the production build                                                          |
+| `npm run test`         | Run the Vitest suite                                                                  |
+| `npm run test:watch`   | Vitest in watch mode                                                                  |
+| `npm run smoke`        | Serve `dist/` in a real browser and fail if the app doesn't mount (run after `build`) |
+| `npm run typecheck`    | `tsc --noEmit`                                                                        |
+| `npm run lint`         | ESLint over `src/`                                                                    |
+| `npm run format`       | Prettier write over `src/`                                                            |
+| `npm run format:check` | Prettier check (CI)                                                                   |
 
 ## Project structure
 
@@ -114,6 +115,19 @@ Per-banner adjustments made by the auto-contrast engine never propagate — each
 ## A note on the AI features
 
 BannerCanva is a fully client-side app with no backend, so there is nowhere server-side to hold a credential. AI features therefore run on keys **you** supply, stored in your browser's local storage, with requests going straight from the browser to Anthropic and Google. That is a deliberate trade-off for a local tool, and it is stated in the settings dialog — use scoped keys, and avoid it on a shared machine. Everything else in the app works with no keys at all: the wizard accepts hand-written copy, and backgrounds can be uploaded.
+
+## Deploying
+
+The app is a static SPA with no backend and no client-side routing, so any static
+host works — on Vercel the Vite preset (`npm run build` → `dist/`) needs no extra
+configuration.
+
+One deployment caveat worth knowing: `vite build` succeeding does not prove the
+bundle runs. A hand-written `manualChunks` split once put Radix in a chunk that
+evaluated before React's, so `React.forwardRef` was undefined and production
+served a blank page while dev, types and tests were all green. `npm run smoke`
+now serves the real `dist/` in a browser and fails if the app doesn't mount; CI
+runs it on every push.
 
 ## Documentation
 
