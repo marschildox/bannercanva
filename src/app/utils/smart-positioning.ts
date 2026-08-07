@@ -123,6 +123,32 @@ export function computeSmartLayout(content: BannerContent, format: BannerFormat)
   // ── CTAs ──────────────────────────────────────────────────────────────────
   const ctaResult = positionCtaGroup(content, format, mode, safe, baseFontSize, textsResult);
 
+  // ── Balance the text + CTA block on tall, narrow formats ─────────────────
+  // In compressed mode the texts are centred in a zone that reserves room at
+  // the bottom, and the CTA now follows the texts rather than being pinned to
+  // the frame edge — which left that reserve as dead space under the button.
+  // Shifting the block as a unit centres it in the space below the logo.
+  let balancedTexts = textsResult.texts;
+  let balancedCtaY = ctaResult.y;
+  if (mode === 'compressed' && balancedTexts.length > 0) {
+    const ctaHeight = estimateCtaBlockHeight(content, baseFontSize);
+    const blockTop = Math.min(...balancedTexts.map((t) => t.y ?? 0));
+    const blockBottom = Math.max(balancedCtaY + ctaHeight, textsResult.bottomY);
+    const zoneTop = logoResult.bottomY;
+    const zoneBottom = format.height - safe.y;
+    const idealTop = zoneTop + Math.max(0, (zoneBottom - zoneTop - (blockBottom - blockTop)) / 2);
+    const shift = Math.round(idealTop - blockTop);
+
+    if (shift !== 0) {
+      // Never push the block past the safe area at either end.
+      const clampedShift = clamp(shift, zoneTop - blockTop, zoneBottom - blockBottom);
+      if (clampedShift !== 0) {
+        balancedTexts = balancedTexts.map((t) => ({ ...t, y: (t.y ?? 0) + clampedShift }));
+        balancedCtaY += clampedShift;
+      }
+    }
+  }
+
   // ── Shapes ────────────────────────────────────────────────────────────────
   const shapesResult = positionShapes(content, format, mode, safe);
 
@@ -138,10 +164,10 @@ export function computeSmartLayout(content: BannerContent, format: BannerFormat)
     logoHeight: logoResult.height,
     logoRotation: content.logoRotation || 0,
     // Texts
-    texts: textsResult.texts,
+    texts: balancedTexts,
     // CTAs
     ctaGroupX: ctaResult.x,
-    ctaGroupY: ctaResult.y,
+    ctaGroupY: balancedCtaY,
     ctas: ctaResult.ctas,
     // Shapes
     shapes: shapesResult,
@@ -425,6 +451,22 @@ interface CtaResult {
   ctas: CTA[];
 }
 
+/** Height of the stacked CTA block — mirrors positionCtaGroup's estimate. */
+function estimateCtaBlockHeight(content: BannerContent, baseFontSize: number): number {
+  const ctas = content.ctas || [];
+  if (ctas.length === 0) return 0;
+  const ctaGap = Math.round(baseFontSize * 0.4);
+  let total = 0;
+  ctas.forEach((cta, i) => {
+    const fs = Math.round(
+      baseFontSize * 0.9 * (content.ctaSize / 100) * ((cta.fontSize || 100) / 100),
+    );
+    total += Math.ceil(fs * 1.2) + Math.round(fs * 0.5) * 2;
+    if (i < ctas.length - 1) total += ctaGap;
+  });
+  return total;
+}
+
 function positionCtaGroup(
   content: BannerContent,
   format: BannerFormat,
@@ -467,10 +509,15 @@ function positionCtaGroup(
       return { x: Math.max(ctaX, textsResult.rightX + safe.x), y: Math.max(safe.y, ctaY), ctas };
     }
     case 'compressed': {
-      // CTAs at the bottom, centered
+      // CTAs below the texts, centered — not pinned to the bottom edge.
+      // Anchoring them to the frame bottom on a tall, narrow banner (a
+      // skyscraper, a story) left the button stranded far below the copy with a
+      // large dead gap; following the text reads as one composition.
       const ctaX = Math.round((W - maxCtaW) / 2);
-      const ctaY = Math.round(H - safe.y - totalCtaH);
-      return { x: Math.max(0, ctaX), y: Math.max(textsResult.bottomY, ctaY), ctas };
+      const desiredY = textsResult.bottomY + Math.round(safe.y * 0.6);
+      const maxY = H - safe.y - totalCtaH;
+      const ctaY = Math.round(clamp(desiredY, safe.y, Math.max(safe.y, maxY)));
+      return { x: Math.max(0, ctaX), y: ctaY, ctas };
     }
     default: {
       // stacked

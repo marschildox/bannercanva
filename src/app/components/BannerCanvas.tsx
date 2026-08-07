@@ -1406,6 +1406,12 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
             {/* ─── CTAs ─── */}
             {safeContent.ctas.length > 0 &&
               (() => {
+                // The CTA's default (undragged) position must respect the same
+                // safe area as the layout engine and the logo defaults.
+                // baseFontSize derives from the *smaller* dimension, so padding
+                // from it left the button 8px above the bottom of a 120x600
+                // skyscraper while the engine would have used 36px.
+                const ctaSafe = getSafeArea(format);
                 const padding = Math.round(baseFontSize * 0.8);
                 const ctaGap = Math.round(baseFontSize * 0.4);
                 const isCtaGroupSelected = selectedElement?.type === 'cta-group';
@@ -1433,26 +1439,29 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
                 const pos = safeContent.ctaPosition || 'bottom';
                 switch (pos) {
                   case 'top':
-                    defaultCtaY = padding;
+                    defaultCtaY = ctaSafe.y;
                     break;
                   case 'bottom':
-                    defaultCtaY = format.height - padding - totalCtaHeight;
+                    defaultCtaY = format.height - ctaSafe.y - totalCtaHeight;
                     break;
                   case 'center':
                     defaultCtaY = Math.round((format.height - totalCtaHeight) / 2);
                     break;
                   case 'left':
                     defaultCtaY = Math.round((format.height - totalCtaHeight) / 2);
-                    defaultCtaX = padding;
+                    defaultCtaX = ctaSafe.x;
                     break;
                   case 'right':
                     defaultCtaY = Math.round((format.height - totalCtaHeight) / 2);
                     // For right preset, the X position will be determined after
                     // measuring. As a fallback, center it.
-                    defaultCtaX = Math.round(format.width * 0.6);
+                    defaultCtaX = Math.min(
+                      Math.round(format.width * 0.6),
+                      format.width - ctaSafe.x,
+                    );
                     break;
                   default:
-                    defaultCtaY = format.height - padding - totalCtaHeight;
+                    defaultCtaY = format.height - ctaSafe.y - totalCtaHeight;
                     break;
                 }
 
@@ -1486,15 +1495,22 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
                   // ── Preset positioning mode ────────────────────────────
                   ctaWrapperStyle.left = '0px';
                   ctaWrapperStyle.width = `${format.width}px`;
-                  ctaWrapperStyle.top = `${ctaGroupY}px`;
+                  if (pos === 'bottom') {
+                    // Anchor from the bottom instead of a computed top: the
+                    // button's real height can differ from totalCtaHeight's
+                    // estimate, and any shortfall would eat into the margin.
+                    ctaWrapperStyle.bottom = `${ctaSafe.y}px`;
+                  } else {
+                    ctaWrapperStyle.top = `${ctaGroupY}px`;
+                  }
 
                   if (pos === 'left') {
                     ctaWrapperStyle.textAlign = 'left';
-                    ctaWrapperStyle.paddingLeft = `${padding}px`;
+                    ctaWrapperStyle.paddingLeft = `${Math.max(padding, ctaSafe.x)}px`;
                     ctaColumnStyle.textAlign = 'left';
                   } else if (pos === 'right') {
                     ctaWrapperStyle.textAlign = 'right';
-                    ctaWrapperStyle.paddingRight = `${padding}px`;
+                    ctaWrapperStyle.paddingRight = `${Math.max(padding, ctaSafe.x)}px`;
                     ctaColumnStyle.textAlign = 'right';
                   }
                 }

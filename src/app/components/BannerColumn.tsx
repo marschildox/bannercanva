@@ -9,9 +9,10 @@ import {
   VERTICAL_FORMATS,
   SelectedElement,
 } from '../types/banner';
-import { Plus, ArrowDown, Info, HelpCircle, X } from 'lucide-react';
+import { Plus, Info, HelpCircle, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { FixedScale } from './FixedScale';
+import { PropagationArrow } from './PropagationArrow';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
@@ -143,9 +144,10 @@ export function BannerColumn({
       {/* Propagation Arrow - Show if there are children */}
       {column.childFormats.length > 0 && (
         <FixedScale zoom={zoom} className="flex items-center justify-center">
-          <div className="h-10 w-10 rounded-full bg-orange-500 flex items-center justify-center shadow-md">
-            <ArrowDown className="h-5 w-5 text-white" />
-          </div>
+          <PropagationArrow
+            direction="down"
+            title="The master's design flows down to these banners"
+          />
         </FixedScale>
       )}
 
@@ -174,11 +176,8 @@ export function BannerColumn({
 
           {/* Show arrow between children if not the last one */}
           {index < column.childFormats.length - 1 && (
-            <FixedScale
-              zoom={zoom}
-              className="h-8 w-8 rounded-full bg-orange-400 flex items-center justify-center shadow-sm"
-            >
-              <ArrowDown className="h-4 w-4 text-white" />
+            <FixedScale zoom={zoom} className="flex items-center justify-center">
+              <PropagationArrow direction="down" />
             </FixedScale>
           )}
         </div>

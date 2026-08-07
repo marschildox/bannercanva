@@ -17,21 +17,14 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { LeftSidebar } from './components/LeftSidebar';
 import { InfinityBoard, InfinityBoardRef } from './components/InfinityBoard';
 import { FixedScale } from './components/FixedScale';
+import { PropagationArrow } from './components/PropagationArrow';
 import { ZoomControls } from './components/ZoomControls';
 import { useBannerManager } from './hooks/useBannerManager';
 import { useCustomFormats } from './hooks/useCustomFormats';
 import { useAutoThumbnails } from './hooks/useAutoThumbnails';
 import { useAutoTextContrast } from './hooks/useAutoTextContrast';
 import { Button } from './components/ui/button';
-import {
-  ChevronRight,
-  ArrowRight,
-  PanelLeft,
-  Sparkles,
-  Wand2,
-  KeyRound,
-  HelpCircle,
-} from 'lucide-react';
+import { ChevronRight, PanelLeft, Sparkles, Wand2, KeyRound, HelpCircle } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { createGroup, dissolveGroup } from './utils/group-helpers';
 import { computeSmartLayout } from './utils/smart-positioning';
@@ -505,9 +498,10 @@ export default function App() {
                 {/* Horizontal Propagation Arrow - Show between columns */}
                 {columnIndex < columns.length - 1 && (
                   <FixedScale zoom={zoom} className="flex items-center justify-center mt-20">
-                    <div className="h-12 w-12 rounded-full bg-orange-500 flex items-center justify-center shadow-lg">
-                      <ArrowRight className="h-6 w-6 text-white" />
-                    </div>
+                    <PropagationArrow
+                      direction="right"
+                      title="Changes in this column propagate to the next"
+                    />
                   </FixedScale>
                 )}
 
