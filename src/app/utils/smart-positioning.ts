@@ -34,6 +34,27 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Per-axis safe area: how far content is kept from each edge.
+ *
+ * A single margin derived from the *smaller* dimension collapses on extreme
+ * aspect ratios — a 970x90 leaderboard got 5px on every side, so text and
+ * buttons crowded the frame. Each axis is now derived from its own dimension,
+ * with an absolute floor so tiny banners still breathe and a cap so huge ones
+ * don't waste half the canvas.
+ */
+export interface SafeArea {
+  x: number;
+  y: number;
+}
+
+export function getSafeArea(format: BannerFormat, pct: number = 0.06): SafeArea {
+  return {
+    x: clamp(Math.round(format.width * pct), 8, 96),
+    y: clamp(Math.round(format.height * pct), 8, 96),
+  };
+}
+
 /** Replicate BannerCanvas's baseFontSize formula */
 function getBaseFontSize(format: BannerFormat): number {
   return Math.min(format.width, format.height) * 0.08;
@@ -89,24 +110,24 @@ export function computeSmartLayout(content: BannerContent, format: BannerFormat)
   const baseFontSize = getBaseFontSize(format);
   const mode = getLayoutMode(ratio);
 
-  // Margins (percentage of minDim, with absolute floor)
-  const marginPct = mode === 'compressed' ? 0.04 : mode === 'horizontal' ? 0.06 : 0.05;
-  const margin = Math.max(4, Math.round(minDim * marginPct));
+  // Safe area, per axis. Deliberately mode-independent so the renderer (which
+  // knows nothing about layout modes) computes exactly the same inset.
+  const safe = getSafeArea(format);
 
   // ── Logo ──────────────────────────────────────────────────────────────────
-  const logoResult = positionLogo(content, format, mode, margin, baseFontSize);
+  const logoResult = positionLogo(content, format, mode, safe, baseFontSize);
 
   // ── Texts ─────────────────────────────────────────────────────────────────
-  const textsResult = positionTexts(content, format, mode, margin, baseFontSize, logoResult);
+  const textsResult = positionTexts(content, format, mode, safe, baseFontSize, logoResult);
 
   // ── CTAs ──────────────────────────────────────────────────────────────────
-  const ctaResult = positionCtaGroup(content, format, mode, margin, baseFontSize, textsResult);
+  const ctaResult = positionCtaGroup(content, format, mode, safe, baseFontSize, textsResult);
 
   // ── Shapes ────────────────────────────────────────────────────────────────
-  const shapesResult = positionShapes(content, format, mode, margin);
+  const shapesResult = positionShapes(content, format, mode, safe);
 
   // ── Images ────────────────────────────────────────────────────────────────
-  const imagesResult = positionImages(content, format, mode, margin);
+  const imagesResult = positionImages(content, format, mode, safe);
 
   return {
     ...content,
@@ -148,14 +169,14 @@ function positionLogo(
   content: BannerContent,
   format: BannerFormat,
   mode: LayoutMode,
-  margin: number,
+  safe: SafeArea,
   baseFontSize: number,
 ): LogoResult {
   const W = format.width;
   const H = format.height;
 
   if (!content.logo) {
-    return { x: margin, y: margin, width: 0, height: 0, bottomY: margin, rightX: margin };
+    return { x: safe.x, y: safe.y, width: 0, height: 0, bottomY: safe.y, rightX: safe.x };
   }
 
   const logoSizeFactor = content.logoSize / 100;
@@ -163,24 +184,24 @@ function positionLogo(
   switch (mode) {
     case 'horizontal': {
       // Logo on the left side, vertically centered
-      const logoH = clamp(Math.round(H * 0.6 * logoSizeFactor), 20, H - margin * 2);
+      const logoH = clamp(Math.round(H * 0.6 * logoSizeFactor), 20, H - safe.y * 2);
       const logoW = logoH; // square
-      const x = margin;
+      const x = safe.x;
       const y = Math.round((H - logoH) / 2);
-      return { x, y, width: logoW, height: logoH, bottomY: y + logoH, rightX: x + logoW + margin };
+      return { x, y, width: logoW, height: logoH, bottomY: y + logoH, rightX: x + logoW + safe.x };
     }
     case 'compressed': {
       // Small logo at the top, centered horizontally
       const logoH = clamp(Math.round(H * 0.08 * logoSizeFactor), 16, Math.round(H * 0.15));
       const logoW = logoH;
       const x = Math.round((W - logoW) / 2);
-      const y = margin;
+      const y = safe.y;
       return {
         x,
         y,
         width: logoW,
         height: logoH,
-        bottomY: y + logoH + Math.round(margin * 0.5),
+        bottomY: y + logoH + Math.round(safe.y * 0.5),
         rightX: x + logoW,
       };
     }
@@ -190,15 +211,15 @@ function positionLogo(
       const targetSize = Math.round(baseFontSize * 3 * logoSizeFactor);
       const logoH = clamp(targetSize, 20, Math.round(Math.min(W, H) * 0.25));
       const logoW = logoH;
-      const x = margin;
-      const y = margin;
+      const x = safe.x;
+      const y = safe.y;
       return {
         x,
         y,
         width: logoW,
         height: logoH,
-        bottomY: y + logoH + margin,
-        rightX: x + logoW + margin,
+        bottomY: y + logoH + safe.y,
+        rightX: x + logoW + safe.x,
       };
     }
   }
@@ -220,7 +241,7 @@ function positionTexts(
   content: BannerContent,
   format: BannerFormat,
   mode: LayoutMode,
-  margin: number,
+  safe: SafeArea,
   baseFontSize: number,
   logoResult: LogoResult,
 ): TextsResult {
@@ -261,10 +282,10 @@ function positionTexts(
         textHeights.push(h);
         totalTextH += h;
       });
-      totalTextH += (texts.length - 1) * Math.round(margin * 0.5);
+      totalTextH += (texts.length - 1) * Math.round(safe.y * 0.5);
 
       // Center texts vertically in the banner
-      currentY = Math.max(margin, Math.round((H - totalTextH) / 2));
+      currentY = Math.max(safe.y, Math.round((H - totalTextH) / 2));
 
       texts.forEach((t, i) => {
         const bgStyle = t.bgStyle || 'full-width';
@@ -284,7 +305,7 @@ function positionTexts(
           y: currentY,
           width: isFullWidth ? textZoneWidth : undefined,
         });
-        currentY += textHeights[i] + Math.round(margin * 0.5);
+        currentY += textHeights[i] + Math.round(safe.y * 0.5);
       });
 
       return { texts: newTexts, bottomY: currentY, rightX: textZoneRight };
@@ -304,31 +325,34 @@ function positionTexts(
           fontSize,
           lineH,
           paddingY,
-          W - paddingX * 2,
+          W - safe.x * 2 - paddingX * 2,
           t.fontWeight,
         );
         textHeights.push(h);
         totalTextH += h;
       });
-      const gap = Math.round(margin * 0.3);
+      const gap = Math.round(safe.y * 0.3);
       totalTextH += (texts.length - 1) * gap;
 
       // Position texts in the middle 60% of height (after logo, before CTA)
       const availableTop = logoResult.bottomY;
-      const availableBottom = H - margin - Math.round(H * 0.15); // reserve 15% for CTAs
+      const availableBottom = H - safe.y - Math.round(H * 0.15); // reserve 15% for CTAs
       const availableH = availableBottom - availableTop;
       currentY = Math.round(availableTop + Math.max(0, (availableH - totalTextH) / 2));
 
       texts.forEach((t, i) => {
         const bgStyle = t.bgStyle || 'full-width';
         const isFullWidth = !t.width && bgStyle !== 'inline';
-        const x = isFullWidth ? 0 : Math.round(W * 0.05);
+        // Full-width frames keep `width` undefined — the renderer insets them
+        // by the same safe area. Setting a width here would make the frame stop
+        // counting as full-width on a second pass and shift the text.
+        const x = isFullWidth ? safe.x : Math.round(W * 0.05);
 
         newTexts.push({
           ...t,
           x,
           y: currentY,
-          width: isFullWidth ? W : Math.min(t.width || W, W - Math.round(W * 0.1)),
+          width: isFullWidth ? undefined : Math.min(t.width || W, W - safe.x * 2),
         });
         currentY += textHeights[i] + gap;
       });
@@ -351,19 +375,19 @@ function positionTexts(
           fontSize,
           lineH,
           paddingY,
-          W - paddingX * 2,
+          W - safe.x * 2 - paddingX * 2,
           t.fontWeight,
         );
         textHeights.push(h);
         totalTextH += h;
       });
-      const gap = Math.round(margin * 0.5);
+      const gap = Math.round(safe.y * 0.5);
       totalTextH += (texts.length - 1) * gap;
 
       // Available zone between logo bottom and CTA area
       const availableTop = logoResult.bottomY;
       const ctaReserve = Math.round(H * 0.2); // reserve ~20% for CTAs
-      const availableBottom = H - margin - ctaReserve;
+      const availableBottom = H - safe.y - ctaReserve;
       const availableH = Math.max(0, availableBottom - availableTop);
       currentY = Math.round(availableTop + Math.max(0, (availableH - totalTextH) / 2));
 
@@ -374,8 +398,8 @@ function positionTexts(
         const paddingX = t.paddingX || 16;
         const estWidth = estimateTextWidth(t.text, fontSize, t.fontWeight) + paddingX * 2;
 
-        const x = isFullWidth ? 0 : Math.round((W - Math.min(estWidth, W - margin * 2)) / 2);
-        const w = isFullWidth ? W : undefined;
+        const x = isFullWidth ? safe.x : Math.round((W - Math.min(estWidth, W - safe.x * 2)) / 2);
+        const w = undefined;
 
         newTexts.push({
           ...t,
@@ -405,7 +429,7 @@ function positionCtaGroup(
   content: BannerContent,
   format: BannerFormat,
   mode: LayoutMode,
-  margin: number,
+  safe: SafeArea,
   baseFontSize: number,
   textsResult: TextsResult,
 ): CtaResult {
@@ -438,14 +462,14 @@ function positionCtaGroup(
   switch (mode) {
     case 'horizontal': {
       // CTAs on the right side, vertically centered
-      const ctaX = Math.round(W - margin - maxCtaW);
+      const ctaX = Math.round(W - safe.x - maxCtaW);
       const ctaY = Math.round((H - totalCtaH) / 2);
-      return { x: Math.max(ctaX, textsResult.rightX + margin), y: Math.max(margin, ctaY), ctas };
+      return { x: Math.max(ctaX, textsResult.rightX + safe.x), y: Math.max(safe.y, ctaY), ctas };
     }
     case 'compressed': {
       // CTAs at the bottom, centered
       const ctaX = Math.round((W - maxCtaW) / 2);
-      const ctaY = Math.round(H - margin - totalCtaH);
+      const ctaY = Math.round(H - safe.y - totalCtaH);
       return { x: Math.max(0, ctaX), y: Math.max(textsResult.bottomY, ctaY), ctas };
     }
     default: {
@@ -453,9 +477,9 @@ function positionCtaGroup(
       // CTAs below the texts, centered horizontally
       const ctaX = Math.round((W - maxCtaW) / 2);
       // Position after texts with some spacing, but not beyond the bottom margin
-      const desiredY = textsResult.bottomY + margin;
-      const maxY = H - margin - totalCtaH;
-      const ctaY = Math.round(clamp(desiredY, margin, Math.max(margin, maxY)));
+      const desiredY = textsResult.bottomY + safe.y;
+      const maxY = H - safe.y - totalCtaH;
+      const ctaY = Math.round(clamp(desiredY, safe.y, Math.max(safe.y, maxY)));
       return { x: Math.max(0, ctaX), y: ctaY, ctas };
     }
   }
@@ -469,7 +493,7 @@ function positionShapes(
   content: BannerContent,
   format: BannerFormat,
   mode: LayoutMode,
-  margin: number,
+  safe: SafeArea,
 ): ShapeElement[] {
   const shapes = content.shapes || [];
   if (shapes.length === 0) return [];
@@ -500,8 +524,8 @@ function positionShapes(
     const refSize = 1000;
     const scaleFactor = Math.min(W, H) / refSize;
 
-    const newW = clamp(Math.round(origW * scaleFactor), 10, W - margin * 2);
-    const newH = clamp(Math.round(origH * scaleFactor), 10, H - margin * 2);
+    const newW = clamp(Math.round(origW * scaleFactor), 10, W - safe.x * 2);
+    const newH = clamp(Math.round(origH * scaleFactor), 10, H - safe.y * 2);
 
     const xRatio = origX / refSize;
     const yRatio = origY / refSize;
@@ -526,7 +550,7 @@ function positionImages(
   content: BannerContent,
   format: BannerFormat,
   mode: LayoutMode,
-  margin: number,
+  safe: SafeArea,
 ): ImageElement[] {
   const images = content.images || [];
   if (images.length === 0) return [];
@@ -555,8 +579,8 @@ function positionImages(
     const refSize = 1000;
     const scaleFactor = Math.min(W, H) / refSize;
 
-    const newW = clamp(Math.round(origW * scaleFactor), 10, W - margin * 2);
-    const newH = clamp(Math.round(origH * scaleFactor), 10, H - margin * 2);
+    const newW = clamp(Math.round(origW * scaleFactor), 10, W - safe.x * 2);
+    const newH = clamp(Math.round(origH * scaleFactor), 10, H - safe.y * 2);
 
     const xRatio = origX / refSize;
     const yRatio = origY / refSize;

@@ -13,6 +13,7 @@ import {
   TextElement,
   ShapeElement,
 } from '../types/banner';
+import { getSafeArea } from './smart-positioning';
 
 // ─── Resolve element positions ──────────────────────────────────────────────
 
@@ -45,23 +46,23 @@ export function resolveElementRect(
       x = content.logoX;
       y = content.logoY;
     } else {
-      const margin = Math.round(Math.min(format.width, format.height) * 0.05);
+      const safe = getSafeArea(format);
       const pos = content.logoPosition || 'top-left';
-      x = margin;
-      y = margin;
-      if (pos.includes('right')) x = format.width - w - margin;
-      if (pos.includes('bottom')) y = format.height - h - margin;
+      x = safe.x;
+      y = safe.y;
+      if (pos.includes('right')) x = format.width - w - safe.x;
+      if (pos.includes('bottom')) y = format.height - h - safe.y;
       if (pos === 'center') {
         x = (format.width - w) / 2;
         y = (format.height - h) / 2;
       }
       if (pos === 'top') {
         x = (format.width - w) / 2;
-        y = margin;
+        y = safe.y;
       }
       if (pos === 'bottom') {
         x = (format.width - w) / 2;
-        y = format.height - h - margin;
+        y = format.height - h - safe.y;
       }
     }
     return { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) };
@@ -116,7 +117,7 @@ export function resolveElementRect(
       x = 0;
     }
 
-    const w = isFullWidth ? format.width : text.width || 200;
+    const w = isFullWidth ? format.width - getSafeArea(format).x * 2 : text.width || 200;
     const h = text.height || textFontSize * 1.2 + paddingY * 2;
 
     return {

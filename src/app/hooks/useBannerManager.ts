@@ -409,17 +409,22 @@ export function useBannerManager(initialContent: BannerContent) {
         computeSmartLayout(superMasterContent, superMasterFormat),
       );
 
-      // Then: apply to all other banners using reference-based positioning
+      // Then: re-lay-out every other banner for its OWN format.
+      //
+      // This must NOT use computeSmartLayoutFromReference: that function
+      // expects content expressed in the reference format's coordinates and
+      // rescales it, but each banner's content is already in its own
+      // coordinates. Feeding it here multiplied a Story's y values by
+      // 1920/250, pushing elements thousands of pixels off the canvas.
+      // computeSmartLayout re-derives positions from scratch, so it is both
+      // correct and idempotent.
       columns.forEach((column) => {
         const allFormats = [column.masterFormat, ...column.childFormats];
         allFormats.forEach((format) => {
           if (format.id === superMasterFormat.id) return; // already done
           const content = prev.get(format.id);
           if (!content) return;
-          newContents.set(
-            format.id,
-            computeSmartLayoutFromReference(content, format, superMasterFormat),
-          );
+          newContents.set(format.id, computeSmartLayout(content, format));
         });
       });
 

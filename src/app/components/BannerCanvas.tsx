@@ -5,6 +5,7 @@ import { Settings, Trash2, Crown } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { FixedScale } from './FixedScale';
+import { getSafeArea } from '../utils/smart-positioning';
 import { TransformBox } from './TransformBox';
 
 // Helper function to convert hex color and opacity to rgba
@@ -226,25 +227,25 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
       if (safeContent.logoX !== undefined && safeContent.logoY !== undefined) {
         return { x: safeContent.logoX, y: safeContent.logoY };
       }
-      const margin = Math.round(Math.min(format.width, format.height) * 0.05);
+      const safe = getSafeArea(format);
       const effectiveLogoW = safeContent.logoWidth || logoSize;
       const effectiveLogoH = safeContent.logoHeight || logoSize;
       const pos = safeContent.logoPosition || 'top-left';
-      let x = margin;
-      let y = margin;
-      if (pos.includes('right')) x = format.width - effectiveLogoW - margin;
-      if (pos.includes('bottom')) y = format.height - effectiveLogoH - margin;
+      let x = safe.x;
+      let y = safe.y;
+      if (pos.includes('right')) x = format.width - effectiveLogoW - safe.x;
+      if (pos.includes('bottom')) y = format.height - effectiveLogoH - safe.y;
       if (pos === 'center') {
         x = (format.width - effectiveLogoW) / 2;
         y = (format.height - effectiveLogoH) / 2;
       }
       if (pos === 'top') {
         x = (format.width - effectiveLogoW) / 2;
-        y = margin;
+        y = safe.y;
       }
       if (pos === 'bottom') {
         x = (format.width - effectiveLogoW) / 2;
-        y = format.height - effectiveLogoH - margin;
+        y = format.height - effectiveLogoH - safe.y;
       }
       return { x: Math.round(x), y: Math.round(y) };
     };
@@ -1163,8 +1164,12 @@ export const BannerCanvas = forwardRef<HTMLDivElement, BannerCanvasProps>(
                   : {}),
               };
               if (isFullWidth) {
-                textFrameStyle.left = '0px';
-                textFrameStyle.width = `${format.width}px`;
+                // Inset by the shared safe area instead of running edge-to-edge,
+                // so text never sits flush against the frame border. The layout
+                // engine uses the same helper, so estimates and render agree.
+                const safe = getSafeArea(format);
+                textFrameStyle.left = `${safe.x}px`;
+                textFrameStyle.width = `${format.width - safe.x * 2}px`;
               } else {
                 textFrameStyle.left = `${x}px`;
                 textFrameStyle.width = elementWidth ? `${elementWidth}px` : 'auto';
