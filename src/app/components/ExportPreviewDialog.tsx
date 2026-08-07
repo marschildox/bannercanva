@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
-import { ScrollArea } from './ui/scroll-area';
 import { Badge } from './ui/badge';
 import {
   Download,
@@ -384,7 +383,7 @@ export function ExportPreviewDialog({
         )}
 
         {/* Preview Content */}
-        <ScrollArea className="flex-1 pr-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-2">
           {groupBy === 'column' ? (
             <div className="space-y-6">
               {columnBanners.map((banners, columnIndex) => {
@@ -479,7 +478,7 @@ export function ExportPreviewDialog({
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         {/* Export Actions */}
         <div className="flex items-center justify-between border-t pt-4">
@@ -558,39 +557,51 @@ function BannerPreviewCard({
             ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50 cursor-pointer'
             : 'border-gray-200 hover:border-blue-400 hover:shadow-md cursor-pointer'
       }`}
-      style={{
-        aspectRatio: `${banner.format.width} / ${banner.format.height}`,
-      }}
     >
-      {/* Thumbnail */}
-      <div className="w-full h-full relative bg-gray-50">
+      {/* Preview: a fixed-height box for every format, with the banner
+          letterboxed inside it. Sizing the card from the banner's own aspect
+          ratio made tall formats (a 120x600 skyscraper) taller than the modal
+          and pushed the export button out of reach. object-contain also shows
+          the whole banner — object-cover used to crop the preview. */}
+      <div className="relative h-28 bg-gray-100 flex items-center justify-center p-2">
         {isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-          </div>
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         ) : thumbnail ? (
-          <img src={thumbnail} alt={banner.format.name} className="w-full h-full object-cover" />
+          <img
+            src={thumbnail}
+            alt={banner.format.name}
+            className="max-h-full max-w-full object-contain shadow-sm"
+            style={{ aspectRatio: `${banner.format.width} / ${banner.format.height}` }}
+          />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200" />
+          <div
+            className="max-h-full max-w-full bg-gradient-to-br from-gray-200 to-gray-300 rounded-sm"
+            style={{
+              aspectRatio: `${banner.format.width} / ${banner.format.height}`,
+              height: '100%',
+            }}
+          />
         )}
+
+        {/* Selection Indicator */}
+        <div className="absolute top-1.5 right-1.5 z-10">
+          {isSelected ? (
+            <CheckCircle2 className="h-5 w-5 text-green-600 fill-white" />
+          ) : (
+            <Circle className="h-5 w-5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </div>
       </div>
 
-      {/* Selection Indicator */}
-      <div className="absolute top-2 right-2 z-10">
-        {isSelected ? (
-          <CheckCircle2 className="h-5 w-5 text-green-600 fill-white" />
-        ) : (
-          <Circle className="h-5 w-5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm p-2 border-t transform translate-y-full group-hover:translate-y-0 transition-transform">
-        <h4 className="font-medium text-xs mb-1 truncate">{banner.format.name}</h4>
-        <p className="text-xs text-gray-500">
+      {/* Info — always visible so the set can be reviewed at a glance */}
+      <div className="bg-white p-2 border-t">
+        <h4 className="font-medium text-xs mb-0.5 truncate">{banner.format.name}</h4>
+        <p className="text-[11px] text-gray-500">
           {banner.format.width} x {banner.format.height}
         </p>
-        <div className="flex items-center gap-1.5 mt-1">
+        {/* Wraps: at four columns the row is too narrow for both badges side
+            by side, and the format badge used to be clipped. */}
+        <div className="flex flex-wrap items-center gap-1 mt-1">
           <Badge variant="secondary" className="text-[10px]">
             {outputWidth}x{outputHeight}
           </Badge>
